@@ -8,9 +8,9 @@ import (
 	"errors"
 )
 
-var ErrLoginEmpty = errors.New("Login is empty")
-var ErrLoginExisted = errors.New("Login is already existed")
-var ErrPasswordEmpty = errors.New("Password is empty")
+var ErrLoginEmpty = errors.New("login is empty")
+var ErrLoginExisted = errors.New("login already exists")
+var ErrPasswordEmpty = errors.New("password is empty")
 
 type Storage interface {
 	RegisterUser(ctx context.Context, l string, p string) (string, error)

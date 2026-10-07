@@ -38,8 +38,7 @@ func InitServer() error {
 		return fmt.Errorf("connect to database: %w", err)
 	}
 
-	var storage repository.Storage
-	storage = repository.NewStorageRepo(db)
+	var storage repository.Storage = repository.NewStorageRepo(db)
 	handlers := handler.NewHandlerStorage(storage)
 	return startServer(handlers)
 }

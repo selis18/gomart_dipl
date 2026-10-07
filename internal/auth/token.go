@@ -14,7 +14,7 @@ type claims struct {
 	UserID string
 }
 
-var ErrSecretKeyEmpty = errors.New("Secret key is empty")
+var ErrSecretKeyEmpty = errors.New("secret key is empty")
 
 func BuildToken(id string) (string, error) {
 	secret := config.GetSecretKey()
