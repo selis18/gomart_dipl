@@ -8,8 +8,10 @@ import (
 	"strings"
 
 	"github.com/selis18/gomart_dipl/internal/auth"
+	"github.com/selis18/gomart_dipl/internal/logger"
 	"github.com/selis18/gomart_dipl/internal/model"
 	"github.com/selis18/gomart_dipl/internal/repository"
+	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -42,6 +44,7 @@ func (h *HandlerStorage) Register(w http.ResponseWriter, r *http.Request) {
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
+		logger.Log.Error("hash registration password", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -53,6 +56,7 @@ func (h *HandlerStorage) Register(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusConflict)
 			return
 		default:
+			logger.Log.Error("register user in database", zap.Error(err))
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -60,6 +64,7 @@ func (h *HandlerStorage) Register(w http.ResponseWriter, r *http.Request) {
 
 	token, err := auth.BuildToken(userID)
 	if err != nil {
+		logger.Log.Error("build registration token", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}

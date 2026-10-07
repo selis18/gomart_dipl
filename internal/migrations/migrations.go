@@ -7,6 +7,7 @@ import (
 	"fmt"
 )
 
+//go:embed 000001_create_tables.up.sql
 var createTablesSQL string
 
 func Apply(ctx context.Context, db *sql.DB) error {
