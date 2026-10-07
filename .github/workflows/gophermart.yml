@@ -51,6 +51,8 @@ jobs:
           (cd cmd/accrual && chmod +x accrual_linux_amd64)
 
       - name: Test
+        env:
+          SECRET_KEY: secret-new-way-key
         run: |
           gophermarttest \
             -test.v -test.run=^TestGophermart$ \
