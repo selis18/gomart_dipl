@@ -15,6 +15,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/selis18/gomart_dipl/internal/handler"
 	"github.com/selis18/gomart_dipl/internal/logger"
+	"github.com/selis18/gomart_dipl/internal/migrations"
 	"github.com/selis18/gomart_dipl/internal/repository"
 	"go.uber.org/zap"
 )
@@ -36,6 +37,13 @@ func InitServer() error {
 	cancel()
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
+	}
+
+	migrationCtx, migrationCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	err = migrations.Apply(migrationCtx, db)
+	migrationCancel()
+	if err != nil {
+		return fmt.Errorf("apply database migrations: %w", err)
 	}
 
 	var storage repository.Storage = repository.NewStorageRepo(db)
