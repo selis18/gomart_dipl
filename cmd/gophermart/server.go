@@ -60,6 +60,7 @@ func startServer(h *handler.HandlerStorage) error {
 		r.Route("/user", func(r chi.Router) {
 			r.Use(middleware.AllowContentType("application/json"))
 			r.Post("/register", h.Register)
+			r.Post("/login", h.Auth)
 		})
 	})
 

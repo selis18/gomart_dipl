@@ -9,11 +9,13 @@ import (
 )
 
 var ErrLoginEmpty = errors.New("login is empty")
-var ErrLoginExisted = errors.New("login already exists")
+var ErrLoginExisted = errors.New("login is already existed")
 var ErrPasswordEmpty = errors.New("password is empty")
+var ErrLoginNotExisted = errors.New("login don't exist")
 
 type Storage interface {
 	RegisterUser(ctx context.Context, l string, p string) (string, error)
+	LoginUser(ctx context.Context, l string) (string, string, error)
 }
 
 type StorageRepo struct {
@@ -56,4 +58,27 @@ func (s *StorageRepo) RegisterUser(ctx context.Context, l string, p string) (str
 		return "", err
 	}
 	return userID, nil
+}
+
+func (s *StorageRepo) LoginUser(ctx context.Context, l string) (string, string, error) {
+	var passwordHash string
+	var userID string
+	if l == "" {
+		return "", "", ErrLoginEmpty
+	}
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id,password 
+		FROM users
+		WHERE login=$1
+	`, l).Scan(&userID, &passwordHash)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", ErrLoginNotExisted
+	}
+	if err != nil {
+		return "", "", err
+	}
+
+	return userID, passwordHash, nil
 }

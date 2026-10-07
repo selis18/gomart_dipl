@@ -15,12 +15,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func (h *HandlerStorage) Register(w http.ResponseWriter, r *http.Request) {
+func (h *HandlerStorage) Auth(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
 	var req model.RegisterAuthRequest
 	decoder := json.NewDecoder(r.Body)
-
 	if err := decoder.Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -37,29 +36,20 @@ func (h *HandlerStorage) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.Password) > 72 {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	userID, passwordHash, err := h.storage.LoginUser(r.Context(), req.Login)
 	if err != nil {
-		logger.Log.Error("hash registration password", zap.Error(err))
+		if errors.Is(err, repository.ErrLoginNotExisted) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		logger.Log.Error("get user from database", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	userID, err := h.storage.RegisterUser(r.Context(), req.Login, string(passwordHash))
-	if err != nil {
-		switch {
-		case errors.Is(err, repository.ErrLoginExisted):
-			w.WriteHeader(http.StatusConflict)
-			return
-		default:
-			logger.Log.Error("register user in database", zap.Error(err))
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
+	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(req.Password)); err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
 	}
 
 	token, err := auth.BuildToken(userID)
