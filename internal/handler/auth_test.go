@@ -178,3 +178,7 @@ func (f loginStorageFunc) GetOrdersByUserID(context.Context, string) ([]model.Or
 func (f loginStorageFunc) AddOrder(context.Context, string, string) error {
 	panic("unexpected order insertion")
 }
+
+func (f loginStorageFunc) GetBalance(context.Context, string) (model.Balance, error) {
+	panic("unexpected balance lookup")
+}

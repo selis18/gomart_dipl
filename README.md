@@ -2,7 +2,7 @@
 
 An educational Go backend for the Gophermart loyalty program. The service is designed to accept order numbers, retrieve reward calculations from an external service, and let users track and redeem loyalty points.
 
-**Status: in development.** User registration, login, authenticated order submission and listing with PostgreSQL storage are implemented. See the [project specification](SPECIFICATION.md) (in Russian) for the full requirements.
+**Status: in development.** User registration, login, authenticated order submission, order listing, and balance retrieval with PostgreSQL storage are implemented. See the [project specification](SPECIFICATION.md) (in Russian) for the full requirements.
 
 ## Implemented Features
 
@@ -17,7 +17,7 @@ An educational Go backend for the Gophermart loyalty program. The service is des
 - Configurable logging with zap and graceful HTTP server shutdown on Ctrl+C.
 - Tests for registration, login, order submission, routing, JWT handling, and repository behavior.
 
-Reward processing, integration with the rewards calculation service, balance tracking, and point redemption are not yet implemented.
+`GET /api/user/balance` returns the available balance and total withdrawals from stored operations. Reward processing, integration with the rewards calculation service, and point redemption are not yet implemented.
 
 ## Tech Stack
 
@@ -51,9 +51,10 @@ Create the `gophermart` database and apply the SQL migration. Adjust the Postgre
 psql -h localhost -p 5432 -U postgres -c "CREATE DATABASE gophermart;"
 psql -h localhost -p 5432 -U postgres -d gophermart -v ON_ERROR_STOP=1 -f internal/migrations/000001_create_tables.up.sql
 psql -h localhost -p 5432 -U postgres -d gophermart -v ON_ERROR_STOP=1 -f internal/migrations/000002_order_accrual.up.sql
+psql -h localhost -p 5432 -U postgres -d gophermart -v ON_ERROR_STOP=1 -f internal/migrations/000003_withdrawals.up.sql
 ```
 
-If the database already exists, skip the database creation command. The migrations create the `users` and `orders` tables, add the optional `accrual` column, and index orders by user and upload time. The application also applies both idempotent migrations automatically at startup, including on an existing database.
+If the database already exists, skip the database creation command. The migrations create the `users`, `orders`, and `withdrawals` tables, add the optional `accrual` column, and index orders and withdrawals by user and time. The application applies all three idempotent migrations automatically at startup, including on an existing database. Apply down migrations in reverse order.
 
 ### 3. Configure the Environment and Start the Server
 
@@ -196,6 +197,33 @@ Order numbers remain strings, including leading zeroes. `uploaded_at` uses RFC33
 | `401 Unauthorized` | Missing, invalid, or expired authentication cookie |
 | `500 Internal Server Error` | Storage or response serialization error |
 
+### GET /api/user/balance
+
+Requires the `user` cookie issued by registration or login. No request body or `Content-Type` header is needed.
+
+```powershell
+Invoke-WebRequest -Uri 'http://localhost:8080/api/user/balance' -Method Get -WebSession $session
+```
+
+Example response (`Content-Type: application/json`):
+
+```json
+{
+  "current": 500.5,
+  "withdrawn": 42
+}
+```
+
+`current` is the sum of accruals on this user's `PROCESSED` orders minus all their withdrawals. `withdrawn` is the total amount withdrawn over the lifetime of the account. Both totals are read in a single database statement; operations belonging to other users are excluded. PostgreSQL performs the sums and subtraction using `NUMERIC` before the result is converted for the JSON response.
+
+Both fields are always present. A user without operations receives `200 OK` with `{"current":0,"withdrawn":0}`. New orders do not contribute to the balance. The withdrawals table is ready, but the withdrawal endpoint and automatic reward processing are not yet implemented.
+
+| HTTP Status | Meaning |
+| --- | --- |
+| `200 OK` | Current balance and total withdrawals returned |
+| `401 Unauthorized` | Missing, invalid, or expired authentication cookie |
+| `500 Internal Server Error` | Storage or response serialization error |
+
 ## Testing and Static Analysis
 
 ```powershell
@@ -204,6 +232,8 @@ go vet ./...
 ```
 
 The current tests do not require a running PostgreSQL instance. They cover registration and login, JWT handling, all documented order submission and listing status codes, Luhn validation, long order numbers, request context propagation, and routing. Listing tests check expired cookies, JSON fields, RFC3339 timestamps, absent versus zero accruals, and empty responses. Repository tests use a substitute SQL driver to check insertion, duplicate ownership, user filtering and sort clauses, nullable accruals, and query/scan/iteration failures. They do not verify real PostgreSQL integration or concurrent database behavior.
+
+Balance tests are grouped in `balance_test.go` within the handler and repository packages. They cover decimal and zero totals, a fully spent balance, authentication failures, request context propagation, storage and serialization errors, and SQL clauses for filtering and aggregation. Routing is checked in `server_test.go`. SQL-driver tests do not execute the aggregation against a real PostgreSQL instance.
 
 ## Project Structure
 

@@ -85,6 +85,7 @@ func newRouter(h *handler.HandlerStorage) http.Handler {
 			r.With(middleware.AllowContentType("application/json")).Post("/login", h.Auth)
 			r.Post("/orders", h.PostOrder)
 			r.Get("/orders", h.GetOrdersByUserID)
+			r.Get("/balance", h.GetBalance)
 		})
 	})
 

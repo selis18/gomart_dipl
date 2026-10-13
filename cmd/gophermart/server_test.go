@@ -64,3 +64,29 @@ func TestOrdersRoute(t *testing.T) {
 		}
 	}
 }
+
+func (routerStorage) GetBalance(context.Context, string) (model.Balance, error) {
+	return model.Balance{}, nil
+}
+
+func TestBalanceRoute(t *testing.T) {
+	t.Setenv("SECRET_KEY", "router-test-secret")
+	config.ParseConfig()
+	token, err := auth.BuildToken("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, loggedIn := range []bool{true, false} {
+		r := httptest.NewRequest("GET", "/api/user/balance", nil)
+		want := http.StatusUnauthorized
+		if loggedIn {
+			r.AddCookie(&http.Cookie{Name: "user", Value: token})
+			want = http.StatusOK
+		}
+		w := httptest.NewRecorder()
+		newRouter(handler.NewHandlerStorage(routerStorage{})).ServeHTTP(w, r)
+		if w.Code != want {
+			t.Errorf("status=%d, want %d", w.Code, want)
+		}
+	}
+}
