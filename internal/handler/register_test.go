@@ -18,6 +18,11 @@ import (
 
 type registerStorageFunc func(context.Context, string, string) (string, error)
 
+// LoginUser implements [repository.Storage].
+func (f registerStorageFunc) LoginUser(ctx context.Context, l string) (string, string, error) {
+	panic("unimplemented")
+}
+
 func (f registerStorageFunc) RegisterUser(ctx context.Context, login, hash string) (string, error) {
 	return f(ctx, login, hash)
 }

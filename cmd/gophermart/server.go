@@ -54,15 +54,7 @@ func InitServer() error {
 func startServer(h *handler.HandlerStorage) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
-	r := chi.NewRouter()
-
-	r.Route("/api", func(r chi.Router) {
-		r.Route("/user", func(r chi.Router) {
-			r.Use(middleware.AllowContentType("application/json"))
-			r.Post("/register", h.Register)
-			r.Post("/login", h.Auth)
-		})
-	})
+	r := newRouter(h)
 
 	server := &http.Server{Addr: "localhost:8080", Handler: r, ReadHeaderTimeout: 5 * time.Second}
 	serverErrors := make(chan error, 1)
@@ -82,4 +74,18 @@ func startServer(h *handler.HandlerStorage) error {
 		}
 	}
 	return nil
+}
+
+func newRouter(h *handler.HandlerStorage) http.Handler {
+	r := chi.NewRouter()
+
+	r.Route("/api", func(r chi.Router) {
+		r.Route("/user", func(r chi.Router) {
+			r.With(middleware.AllowContentType("application/json")).Post("/register", h.Register)
+			r.With(middleware.AllowContentType("application/json")).Post("/login", h.Auth)
+			r.Post("/orders", h.PostOrder)
+		})
+	})
+
+	return r
 }

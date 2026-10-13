@@ -2,19 +2,21 @@
 
 An educational Go backend for the Gophermart loyalty program. The service is designed to accept order numbers, retrieve reward calculations from an external service, and let users track and redeem loyalty points.
 
-**Status: in development.** User registration with PostgreSQL storage and JWT issuance is currently implemented. See the [project specification](SPECIFICATION.md) (in Russian) for the full requirements.
+**Status: in development.** User registration, login, and authenticated order submission with PostgreSQL storage are implemented. See the [project specification](SPECIFICATION.md) (in Russian) for the full requirements.
 
 ## Implemented Features
 
 - `POST /api/user/register` endpoint with JSON, login, and password validation.
+- `POST /api/user/login` endpoint with password verification and JWT issuance.
+- `POST /api/user/orders` endpoint with cookie authentication, Luhn validation, and duplicate ownership checks.
 - Password hashing with bcrypt.
 - User storage in PostgreSQL with unique logins.
 - JWT issuance using HS256, with a three-hour token lifetime, delivered in the HttpOnly `user` cookie.
 - JWT creation and validation functions.
 - Configurable logging with zap and graceful HTTP server shutdown on Ctrl+C.
-- Unit tests for registration, JWT handling, and repository input validation.
+- Tests for registration, login, order submission, routing, JWT handling, and repository behavior.
 
-Login, authorization for protected routes, order processing, integration with the rewards calculation service, balance tracking, and point redemption are not yet implemented.
+Order listing, reward processing, integration with the rewards calculation service, balance tracking, and point redemption are not yet implemented.
 
 ## Tech Stack
 
@@ -49,7 +51,7 @@ psql -h localhost -p 5432 -U postgres -c "CREATE DATABASE gophermart;"
 psql -h localhost -p 5432 -U postgres -d gophermart -v ON_ERROR_STOP=1 -f internal/migrations/000001_create_tables.up.sql
 ```
 
-If the database already exists, run only the second command. The migration creates the `users` table. Migrations are not applied automatically at application startup.
+If the database already exists, run only the second command. The migration creates the `users` and `orders` tables. The application also applies this idempotent migration automatically at startup.
 
 ### 3. Configure the Environment and Start the Server
 
@@ -112,6 +114,51 @@ The login must not be empty or contain only whitespace. The password must be bet
 | `415 Unsupported Media Type` | Unsupported request content type |
 | `500 Internal Server Error` | Internal registration error |
 
+### POST /api/user/login
+
+Header: `Content-Type: application/json`. Send the same JSON fields as registration (`login` and `password`). The handler accepts a single JSON object up to 1 MiB; login must not be blank and password must not be empty.
+
+```powershell
+$body = @{ login = 'demo'; password = 'demo-password' } | ConvertTo-Json
+Invoke-WebRequest -Uri 'http://localhost:8080/api/user/login' -Method Post -ContentType 'application/json' -Body $body -SessionVariable session
+```
+
+| HTTP Status | Meaning |
+| --- | --- |
+| `200 OK` | Authenticated; JWT issued in the HttpOnly `user` cookie |
+| `400 Bad Request` | Malformed JSON or invalid login data |
+| `401 Unauthorized` | Unknown login or incorrect password |
+| `415 Unsupported Media Type` | Unsupported request content type |
+| `500 Internal Server Error` | Internal authentication error |
+
+### POST /api/user/orders
+
+Requires the `user` cookie issued by registration or login. Header: `Content-Type: text/plain` (an optional charset parameter is accepted). The body is the order number itself, without JSON quotes, spaces, or a trailing newline:
+
+```text
+12345678903
+```
+
+The number must contain only ASCII digits and pass the Luhn checksum: moving right to left, double every second digit, subtract 9 from doubled values greater than 9, and require the total to be divisible by 10. Validation works directly with digits, preserving leading zeroes and avoiding integer overflow for long numbers.
+
+Using the session from registration or login:
+
+```powershell
+Invoke-WebRequest -Uri 'http://localhost:8080/api/user/orders' -Method Post -ContentType 'text/plain' -Body '12345678903' -WebSession $session
+```
+
+New orders are stored with their owner, status `NEW`, and upload timestamp. Order numbers are globally unique; concurrent submissions cannot overwrite the original owner. Repeating a submission does not change its status or timestamp. Reward calculation is not implemented yet.
+
+| HTTP Status | Meaning |
+| --- | --- |
+| `200 OK` | Order already submitted by this user |
+| `202 Accepted` | New order stored for processing |
+| `400 Bad Request` | Missing/invalid content type, empty body, or body read error |
+| `401 Unauthorized` | Missing, invalid, or expired authentication cookie |
+| `409 Conflict` | Order already belongs to another user |
+| `422 Unprocessable Entity` | Non-digit characters or invalid Luhn checksum |
+| `500 Internal Server Error` | Internal storage error |
+
 ## Testing and Static Analysis
 
 ```powershell
@@ -119,7 +166,7 @@ go test ./...
 go vet ./...
 ```
 
-The current unit tests do not require a running PostgreSQL instance. They cover successful registration, invalid requests, storage errors, JWT creation and validation, and rejection of empty credentials by the repository. They do not cover integration with a real database.
+The current tests do not require a running PostgreSQL instance. They cover registration and login, JWT handling, all documented order submission status codes, Luhn validation, long order numbers, request context propagation, and routing with `text/plain`. Repository tests use a substitute SQL driver to check insertion, duplicate ownership, and database failures. They do not verify real PostgreSQL integration or concurrent database behavior.
 
 ## Project Structure
 

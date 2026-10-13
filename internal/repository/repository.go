@@ -14,6 +14,7 @@ var ErrPasswordEmpty = errors.New("password is empty")
 var ErrLoginNotExisted = errors.New("login don't exist")
 
 type Storage interface {
+	AddOrder(ctx context.Context, userID, number string) error
 	RegisterUser(ctx context.Context, l string, p string) (string, error)
 	LoginUser(ctx context.Context, l string) (string, string, error)
 }
@@ -81,4 +82,28 @@ func (s *StorageRepo) LoginUser(ctx context.Context, l string) (string, string, 
 	}
 
 	return userID, passwordHash, nil
+}
+
+var ErrOrderExists = errors.New("order already belongs to this user")
+var ErrOrderConflict = errors.New("order belongs to another user")
+
+func (s *StorageRepo) AddOrder(ctx context.Context, userID, number string) error {
+	var inserted string
+	err := s.db.QueryRowContext(ctx, `INSERT INTO orders (number, user_id)
+		VALUES ($1, $2) ON CONFLICT (number) DO NOTHING RETURNING number`, number, userID).Scan(&inserted)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	// A separate statement sees the committed winner of a concurrent insert.
+	var owner string
+	if err := s.db.QueryRowContext(ctx, `SELECT user_id FROM orders WHERE number = $1`, number).Scan(&owner); err != nil {
+		return err
+	}
+	if owner == userID {
+		return ErrOrderExists
+	}
+	return ErrOrderConflict
 }
