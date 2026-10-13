@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/selis18/gomart_dipl/internal/model"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -132,4 +133,12 @@ func TestRegisterStorageErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (f registerStorageFunc) GetOrdersByUserID(context.Context, string) ([]model.Order, error) {
+	panic("unexpected order lookup")
+}
+
+func (f registerStorageFunc) AddOrder(context.Context, string, string) error {
+	panic("unexpected order insertion")
 }

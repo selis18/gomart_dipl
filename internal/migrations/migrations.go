@@ -10,9 +10,15 @@ import (
 //go:embed 000001_create_tables.up.sql
 var createTablesSQL string
 
+//go:embed 000002_order_accrual.up.sql
+var orderAccrualSQL string
+
 func Apply(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, createTablesSQL); err != nil {
 		return fmt.Errorf("create database tables: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, orderAccrualSQL); err != nil {
+		return fmt.Errorf("add order accrual: %w", err)
 	}
 	return nil
 }

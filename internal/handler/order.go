@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"mime"
@@ -70,4 +71,35 @@ func validOrderNumber(number string) bool {
 		double = !double
 	}
 	return sum == 0
+}
+
+func (h *HandlerStorage) GetOrdersByUserID(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("user")
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	userID, err := auth.ParseToken(cookie.Value)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	orders, err := h.storage.GetOrdersByUserID(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if len(orders) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	body, err := json.Marshal(orders)
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }

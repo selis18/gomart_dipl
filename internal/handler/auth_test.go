@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/selis18/gomart_dipl/internal/model"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -168,4 +169,12 @@ func TestAuthTokenFailure(t *testing.T) {
 	if len(w.Header().Values("Set-Cookie")) != 0 {
 		t.Error("token failure received a cookie")
 	}
+}
+
+func (f loginStorageFunc) GetOrdersByUserID(context.Context, string) ([]model.Order, error) {
+	panic("unexpected order lookup")
+}
+
+func (f loginStorageFunc) AddOrder(context.Context, string, string) error {
+	panic("unexpected order insertion")
 }

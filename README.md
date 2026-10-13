@@ -2,13 +2,14 @@
 
 An educational Go backend for the Gophermart loyalty program. The service is designed to accept order numbers, retrieve reward calculations from an external service, and let users track and redeem loyalty points.
 
-**Status: in development.** User registration, login, and authenticated order submission with PostgreSQL storage are implemented. See the [project specification](SPECIFICATION.md) (in Russian) for the full requirements.
+**Status: in development.** User registration, login, authenticated order submission and listing with PostgreSQL storage are implemented. See the [project specification](SPECIFICATION.md) (in Russian) for the full requirements.
 
 ## Implemented Features
 
 - `POST /api/user/register` endpoint with JSON, login, and password validation.
 - `POST /api/user/login` endpoint with password verification and JWT issuance.
 - `POST /api/user/orders` endpoint with cookie authentication, Luhn validation, and duplicate ownership checks.
+- `GET /api/user/orders` endpoint returning the authenticated user's orders, newest first, with statuses and available accruals.
 - Password hashing with bcrypt.
 - User storage in PostgreSQL with unique logins.
 - JWT issuance using HS256, with a three-hour token lifetime, delivered in the HttpOnly `user` cookie.
@@ -16,7 +17,7 @@ An educational Go backend for the Gophermart loyalty program. The service is des
 - Configurable logging with zap and graceful HTTP server shutdown on Ctrl+C.
 - Tests for registration, login, order submission, routing, JWT handling, and repository behavior.
 
-Order listing, reward processing, integration with the rewards calculation service, balance tracking, and point redemption are not yet implemented.
+Reward processing, integration with the rewards calculation service, balance tracking, and point redemption are not yet implemented.
 
 ## Tech Stack
 
@@ -49,9 +50,10 @@ Create the `gophermart` database and apply the SQL migration. Adjust the Postgre
 ```powershell
 psql -h localhost -p 5432 -U postgres -c "CREATE DATABASE gophermart;"
 psql -h localhost -p 5432 -U postgres -d gophermart -v ON_ERROR_STOP=1 -f internal/migrations/000001_create_tables.up.sql
+psql -h localhost -p 5432 -U postgres -d gophermart -v ON_ERROR_STOP=1 -f internal/migrations/000002_order_accrual.up.sql
 ```
 
-If the database already exists, run only the second command. The migration creates the `users` and `orders` tables. The application also applies this idempotent migration automatically at startup.
+If the database already exists, skip the database creation command. The migrations create the `users` and `orders` tables, add the optional `accrual` column, and index orders by user and upload time. The application also applies both idempotent migrations automatically at startup, including on an existing database.
 
 ### 3. Configure the Environment and Start the Server
 
@@ -159,6 +161,41 @@ New orders are stored with their owner, status `NEW`, and upload timestamp. Orde
 | `422 Unprocessable Entity` | Non-digit characters or invalid Luhn checksum |
 | `500 Internal Server Error` | Internal storage error |
 
+### GET /api/user/orders
+
+Requires the `user` cookie issued by registration or login. No request body or `Content-Type` header is needed. Only the authenticated user's orders are returned, sorted by upload time from newest to oldest (ties are ordered by number descending).
+
+```powershell
+Invoke-WebRequest -Uri 'http://localhost:8080/api/user/orders' -Method Get -WebSession $session
+```
+
+A successful response has `Content-Type: application/json`:
+
+```json
+[
+  {
+    "number": "9278923470",
+    "status": "PROCESSED",
+    "accrual": 500.5,
+    "uploaded_at": "2026-10-13T12:00:00Z"
+  },
+  {
+    "number": "12345678903",
+    "status": "NEW",
+    "uploaded_at": "2026-10-13T11:00:00Z"
+  }
+]
+```
+
+Order numbers remain strings, including leading zeroes. `uploaded_at` uses RFC3339. Statuses are `NEW`, `PROCESSING`, `INVALID`, or `PROCESSED`. `accrual` is omitted when no amount is stored; a stored zero is returned as `0`. The response reflects stored data; new submissions remain `NEW` until reward processing is implemented.
+
+| HTTP Status | Meaning |
+| --- | --- |
+| `200 OK` | Orders returned as a JSON array |
+| `204 No Content` | User has no orders; response body is empty |
+| `401 Unauthorized` | Missing, invalid, or expired authentication cookie |
+| `500 Internal Server Error` | Storage or response serialization error |
+
 ## Testing and Static Analysis
 
 ```powershell
@@ -166,7 +203,7 @@ go test ./...
 go vet ./...
 ```
 
-The current tests do not require a running PostgreSQL instance. They cover registration and login, JWT handling, all documented order submission status codes, Luhn validation, long order numbers, request context propagation, and routing with `text/plain`. Repository tests use a substitute SQL driver to check insertion, duplicate ownership, and database failures. They do not verify real PostgreSQL integration or concurrent database behavior.
+The current tests do not require a running PostgreSQL instance. They cover registration and login, JWT handling, all documented order submission and listing status codes, Luhn validation, long order numbers, request context propagation, and routing. Listing tests check expired cookies, JSON fields, RFC3339 timestamps, absent versus zero accruals, and empty responses. Repository tests use a substitute SQL driver to check insertion, duplicate ownership, user filtering and sort clauses, nullable accruals, and query/scan/iteration failures. They do not verify real PostgreSQL integration or concurrent database behavior.
 
 ## Project Structure
 

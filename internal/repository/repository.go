@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"github.com/selis18/gomart_dipl/internal/model"
 )
 
 var ErrLoginEmpty = errors.New("login is empty")
@@ -14,6 +15,7 @@ var ErrPasswordEmpty = errors.New("password is empty")
 var ErrLoginNotExisted = errors.New("login don't exist")
 
 type Storage interface {
+	GetOrdersByUserID(ctx context.Context, userID string) ([]model.Order, error)
 	AddOrder(ctx context.Context, userID, number string) error
 	RegisterUser(ctx context.Context, l string, p string) (string, error)
 	LoginUser(ctx context.Context, l string) (string, string, error)
