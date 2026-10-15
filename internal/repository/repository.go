@@ -15,6 +15,7 @@ var ErrPasswordEmpty = errors.New("password is empty")
 var ErrLoginNotExisted = errors.New("login don't exist")
 
 type Storage interface {
+	Withdraw(ctx context.Context, userID, order, sum string) error
 	GetBalance(ctx context.Context, userID string) (model.Balance, error)
 	GetOrdersByUserID(ctx context.Context, userID string) ([]model.Order, error)
 	AddOrder(ctx context.Context, userID, number string) error

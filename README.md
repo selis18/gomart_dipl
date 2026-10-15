@@ -2,7 +2,7 @@
 
 An educational Go backend for the Gophermart loyalty program. The service is designed to accept order numbers, retrieve reward calculations from an external service, and let users track and redeem loyalty points.
 
-**Status: in development.** User registration, login, authenticated order submission, order listing, and balance retrieval with PostgreSQL storage are implemented. See the [project specification](SPECIFICATION.md) (in Russian) for the full requirements.
+**Status: in development.** User registration, login, authenticated order submission, order listing, balance retrieval, and point redemption with PostgreSQL storage are implemented. See the [project specification](SPECIFICATION.md) (in Russian) for the full requirements.
 
 ## Implemented Features
 
@@ -10,6 +10,7 @@ An educational Go backend for the Gophermart loyalty program. The service is des
 - `POST /api/user/login` endpoint with password verification and JWT issuance.
 - `POST /api/user/orders` endpoint with cookie authentication, Luhn validation, and duplicate ownership checks.
 - `GET /api/user/orders` endpoint returning the authenticated user's orders, newest first, with statuses and available accruals.
+- `POST /api/user/balance/withdraw` endpoint with authenticated, transactional point redemption.
 - Password hashing with bcrypt.
 - User storage in PostgreSQL with unique logins.
 - JWT issuance using HS256, with a three-hour token lifetime, delivered in the HttpOnly `user` cookie.
@@ -17,7 +18,7 @@ An educational Go backend for the Gophermart loyalty program. The service is des
 - Configurable logging with zap and graceful HTTP server shutdown on Ctrl+C.
 - Tests for registration, login, order submission, routing, JWT handling, and repository behavior.
 
-`GET /api/user/balance` returns the available balance and total withdrawals from stored operations. Reward processing, integration with the rewards calculation service, and point redemption are not yet implemented.
+`GET /api/user/balance` returns the available balance and total withdrawals from stored operations. Reward processing and integration with the rewards calculation service are not yet implemented.
 
 ## Tech Stack
 
@@ -216,13 +217,37 @@ Example response (`Content-Type: application/json`):
 
 `current` is the sum of accruals on this user's `PROCESSED` orders minus all their withdrawals. `withdrawn` is the total amount withdrawn over the lifetime of the account. Both totals are read in a single database statement; operations belonging to other users are excluded. PostgreSQL performs the sums and subtraction using `NUMERIC` before the result is converted for the JSON response.
 
-Both fields are always present. A user without operations receives `200 OK` with `{"current":0,"withdrawn":0}`. New orders do not contribute to the balance. The withdrawals table is ready, but the withdrawal endpoint and automatic reward processing are not yet implemented.
+Both fields are always present. A user without operations receives `200 OK` with `{"current":0,"withdrawn":0}`. New orders do not contribute to the balance. Automatic reward processing is not yet implemented.
 
 | HTTP Status | Meaning |
 | --- | --- |
 | `200 OK` | Current balance and total withdrawals returned |
 | `401 Unauthorized` | Missing, invalid, or expired authentication cookie |
 | `500 Internal Server Error` | Storage or response serialization error |
+
+### Redeem Points
+
+`POST /api/user/balance/withdraw` requires the authenticated `user` cookie and `Content-Type: application/json`.
+
+```json
+{"order":"2377225624","sum":751}
+```
+
+`order` must pass the Luhn check. It identifies a hypothetical new purchase and does not need to exist in `orders`. `sum` must be a positive JSON number. A successful response has an empty body.
+
+The repository locks the user's row within a READ COMMITTED transaction before reading withdrawals and checking funds. Concurrent withdrawals for the same user are serialized. PostgreSQL compares and stores the original decimal amount using `NUMERIC`; no floating-point balance arithmetic is used. The operation records the withdrawal and its timestamp, which are reflected by `GET /api/user/balance`.
+
+An identical retry (same order, user, and numeric amount) returns `200` without another deduction, even if the remaining balance is insufficient. An existing withdrawal with different details returns `409`; this duplicate policy extends the specification.
+
+| HTTP Status | Meaning |
+| --- | --- |
+| `200 OK` | Withdrawal recorded, or identical request already processed |
+| `400 Bad Request` | Invalid JSON, content type, or nonpositive/invalid sum |
+| `401 Unauthorized` | Missing, invalid, or expired authentication cookie |
+| `402 Payment Required` | Insufficient available points |
+| `409 Conflict` | Order already used for a withdrawal with different details |
+| `422 Unprocessable Entity` | Invalid order number |
+| `500 Internal Server Error` | Database or transaction error |
 
 ## Testing and Static Analysis
 
@@ -234,6 +259,8 @@ go vet ./...
 The current tests do not require a running PostgreSQL instance. They cover registration and login, JWT handling, all documented order submission and listing status codes, Luhn validation, long order numbers, request context propagation, and routing. Listing tests check expired cookies, JSON fields, RFC3339 timestamps, absent versus zero accruals, and empty responses. Repository tests use a substitute SQL driver to check insertion, duplicate ownership, user filtering and sort clauses, nullable accruals, and query/scan/iteration failures. They do not verify real PostgreSQL integration or concurrent database behavior.
 
 Balance tests are grouped in `balance_test.go` within the handler and repository packages. They cover decimal and zero totals, a fully spent balance, authentication failures, request context propagation, storage and serialization errors, and SQL clauses for filtering and aggregation. Routing is checked in `server_test.go`. SQL-driver tests do not execute the aggregation against a real PostgreSQL instance.
+
+Withdrawal tests are included in the same balance test files. They cover request validation, insufficient funds, duplicate handling, transaction commit and rollback, and database errors at each operation. These tests do not verify locking or concurrent execution on a live PostgreSQL instance.
 
 ## Project Structure
 

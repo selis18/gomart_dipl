@@ -2,15 +2,16 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
 	"github.com/selis18/gomart_dipl/internal/auth"
 	"github.com/selis18/gomart_dipl/internal/config"
 	"github.com/selis18/gomart_dipl/internal/handler"
 	"github.com/selis18/gomart_dipl/internal/model"
 	"github.com/selis18/gomart_dipl/internal/repository"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
 )
 
 type routerStorage struct{ repository.Storage }
@@ -87,6 +88,31 @@ func TestBalanceRoute(t *testing.T) {
 		newRouter(handler.NewHandlerStorage(routerStorage{})).ServeHTTP(w, r)
 		if w.Code != want {
 			t.Errorf("status=%d, want %d", w.Code, want)
+		}
+	}
+}
+
+func (routerStorage) Withdraw(context.Context, string, string, string) error { return nil }
+
+func TestWithdrawRoute(t *testing.T) {
+	t.Setenv("SECRET_KEY", "router-test-secret")
+	config.ParseConfig()
+	token, err := auth.BuildToken("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, loggedIn := range []bool{true, false} {
+		r := httptest.NewRequest("POST", "/api/user/balance/withdraw", strings.NewReader(`{"order":"18","sum":1}`))
+		r.Header.Set("Content-Type", "application/json")
+		want := 401
+		if loggedIn {
+			r.AddCookie(&http.Cookie{Name: "user", Value: token})
+			want = 200
+		}
+		w := httptest.NewRecorder()
+		newRouter(handler.NewHandlerStorage(routerStorage{})).ServeHTTP(w, r)
+		if w.Code != want {
+			t.Errorf("status=%d want %d", w.Code, want)
 		}
 	}
 }

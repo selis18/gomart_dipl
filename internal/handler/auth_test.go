@@ -182,3 +182,7 @@ func (f loginStorageFunc) AddOrder(context.Context, string, string) error {
 func (f loginStorageFunc) GetBalance(context.Context, string) (model.Balance, error) {
 	panic("unexpected balance lookup")
 }
+
+func (f loginStorageFunc) Withdraw(context.Context, string, string, string) error {
+	panic("unexpected withdrawal")
+}

@@ -101,3 +101,74 @@ func TestGetBalance(t *testing.T) {
 		})
 	}
 }
+
+type withdrawalStorage struct {
+	repository.Storage
+	withdraw func(context.Context, string, string, string) error
+}
+
+func (s withdrawalStorage) Withdraw(ctx context.Context, user, order, sum string) error {
+	return s.withdraw(ctx, user, order, sum)
+}
+func TestWithdraw(t *testing.T) {
+	t.Setenv("SECRET_KEY", "withdraw-test-secret")
+	config.ParseConfig()
+	token, err := auth.BuildToken("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name, body, cookie, contentType string
+		storageErr                      error
+		status                          int
+		called                          bool
+	}{
+		{"success", `{"order":"0018","sum":0.10}`, token, "application/json", nil, 200, true},
+		{"insufficient", `{"order":"0018","sum":0.10}`, token, "application/json", repository.ErrInsufficientFunds, 402, true},
+		{"conflict", `{"order":"0018","sum":0.10}`, token, "application/json", repository.ErrWithdrawalConflict, 409, true},
+		{"storage failure", `{"order":"0018","sum":0.10}`, token, "application/json", errors.New("private error"), 500, true},
+		{"missing auth", `{}`, "", "application/json", nil, 401, false},
+		{"invalid auth", `{}`, "invalid", "application/json", nil, 401, false},
+		{"bad order", `{"order":"19","sum":1}`, token, "application/json", nil, 422, false},
+		{"empty order", `{"sum":1}`, token, "application/json", nil, 422, false},
+		{"bad json", `{`, token, "application/json", nil, 400, false},
+		{"trailing json", `{"order":"18","sum":1}{}`, token, "application/json", nil, 400, false},
+		{"missing sum", `{"order":"18"}`, token, "application/json", nil, 400, false},
+		{"null sum", `{"order":"18","sum":null}`, token, "application/json", nil, 400, false},
+		{"zero sum", `{"order":"18","sum":0}`, token, "application/json", nil, 400, false},
+		{"negative sum", `{"order":"18","sum":-1}`, token, "application/json", nil, 400, false},
+		{"string sum", `{"order":"18","sum":"1"}`, token, "application/json", nil, 400, false},
+		{"overflow", `{"order":"18","sum":1e999}`, token, "application/json", nil, 400, false},
+		{"wrong media", `{}`, token, "text/plain", nil, 400, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			ctx := context.WithValue(context.Background(), orderContextKeyForWithdrawal{}, "request")
+			s := withdrawalStorage{withdraw: func(got context.Context, user, order, sum string) error {
+				calls++
+				if got != ctx || user != "alice" || order != "0018" || sum != "0.10" {
+					t.Errorf("wrong arguments: %s %s %s", user, order, sum)
+				}
+				return tt.storageErr
+			}}
+			r := httptest.NewRequest("POST", "/api/user/balance/withdraw", strings.NewReader(tt.body)).WithContext(ctx)
+			r.Header.Set("Content-Type", tt.contentType)
+			if tt.cookie != "" {
+				r.AddCookie(&http.Cookie{Name: "user", Value: tt.cookie})
+			}
+			w := httptest.NewRecorder()
+			NewHandlerStorage(s).Withdraw(w, r)
+			if w.Code != tt.status {
+				t.Errorf("status=%d want %d", w.Code, tt.status)
+			}
+			if (calls == 1) != tt.called || calls > 1 {
+				t.Errorf("calls=%d", calls)
+			}
+			if strings.Contains(w.Body.String(), "private") {
+				t.Error("storage error exposed")
+			}
+		})
+	}
+}
+
+type orderContextKeyForWithdrawal struct{}
