@@ -186,3 +186,7 @@ func (f loginStorageFunc) GetBalance(context.Context, string) (model.Balance, er
 func (f loginStorageFunc) Withdraw(context.Context, string, string, string) error {
 	panic("unexpected withdrawal")
 }
+
+func (f loginStorageFunc) GetWithdrawals(context.Context, string) ([]model.Withdrawal, error) {
+	panic("unexpected withdrawals lookup")
+}

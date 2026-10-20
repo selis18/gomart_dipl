@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/selis18/gomart_dipl/internal/model"
 )
@@ -196,4 +197,72 @@ func TestWithdraw(t *testing.T) {
 			t.Errorf("error=%v", err)
 		}
 	})
+}
+
+type withdrawalsListRows struct{ listRows }
+
+func (*withdrawalsListRows) Columns() []string {
+	return []string{"order_number", "sum", "processed_at"}
+}
+
+type withdrawalsListConn struct {
+	orderConn
+	rows *withdrawalsListRows
+	err  error
+}
+
+func (c *withdrawalsListConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
+	if ctx.Value(orderContextKey{}) != "request" {
+		c.t.Error("missing context")
+	}
+	if len(args) != 1 || args[0].Value != "alice" {
+		c.t.Errorf("wrong user filter: %v", args)
+	}
+	if !strings.Contains(q, "FROM withdrawals WHERE user_id = $1") || !strings.Contains(q, "ORDER BY processed_at DESC, order_number DESC") {
+		c.t.Error("missing user filter or deterministic newest-first ordering")
+	}
+	return c.rows, c.err
+}
+func TestGetWithdrawals(t *testing.T) {
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	values := [][]driver.Value{{"0018", "500.5", now}, {"12345678903", "42", now.Add(-time.Hour)}}
+	failure := errors.New("database failure")
+	for _, tt := range []struct {
+		name              string
+		values            [][]driver.Value
+		queryErr, rowsErr error
+		wantErr           bool
+	}{
+		{"history", values, nil, nil, false},
+		{"empty", nil, nil, nil, false},
+		{"query failure", nil, failure, nil, true},
+		{"iteration failure", values, nil, failure, true},
+		{"scan failure", [][]driver.Value{{"18", "invalid", now}}, nil, nil, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rows := &withdrawalsListRows{listRows: listRows{values: tt.values, err: tt.rowsErr}}
+			conn := &withdrawalsListConn{orderConn: orderConn{t: t}, rows: rows, err: tt.queryErr}
+			db := sql.OpenDB(orderConnector{conn: conn})
+			defer db.Close()
+			got, err := NewStorageRepo(db).GetWithdrawals(context.WithValue(context.Background(), orderContextKey{}, "request"), "alice")
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error=%v", err)
+			}
+			if tt.queryErr == nil && !rows.closed {
+				t.Error("rows not closed")
+			}
+			if tt.wantErr {
+				if got != nil {
+					t.Error("must not return partial history")
+				}
+				return
+			}
+			if len(got) != len(tt.values) {
+				t.Fatalf("count=%d", len(got))
+			}
+			if len(got) > 0 && (got[0].Order != "0018" || got[0].Sum != 500.5 || !got[0].ProcessedAt.Equal(now) || got[1].Order != "12345678903" || got[1].Sum != 42 || !got[1].ProcessedAt.Equal(now.Add(-time.Hour))) {
+				t.Errorf("history=%v", got)
+			}
+		})
+	}
 }

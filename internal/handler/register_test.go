@@ -150,3 +150,7 @@ func (f registerStorageFunc) GetBalance(context.Context, string) (model.Balance,
 func (f registerStorageFunc) Withdraw(context.Context, string, string, string) error {
 	panic("unexpected withdrawal")
 }
+
+func (f registerStorageFunc) GetWithdrawals(context.Context, string) ([]model.Withdrawal, error) {
+	panic("unexpected withdrawals lookup")
+}

@@ -116,3 +116,28 @@ func TestWithdrawRoute(t *testing.T) {
 		}
 	}
 }
+
+func (routerStorage) GetWithdrawals(context.Context, string) ([]model.Withdrawal, error) {
+	return nil, nil
+}
+func TestWithdrawalsRoute(t *testing.T) {
+	t.Setenv("SECRET_KEY", "router-test-secret")
+	config.ParseConfig()
+	token, err := auth.BuildToken("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, loggedIn := range []bool{true, false} {
+		r := httptest.NewRequest("GET", "/api/user/withdrawals", nil)
+		want := http.StatusUnauthorized
+		if loggedIn {
+			r.AddCookie(&http.Cookie{Name: "user", Value: token})
+			want = http.StatusNoContent
+		}
+		w := httptest.NewRecorder()
+		newRouter(handler.NewHandlerStorage(routerStorage{})).ServeHTTP(w, r)
+		if w.Code != want {
+			t.Errorf("status=%d want %d", w.Code, want)
+		}
+	}
+}

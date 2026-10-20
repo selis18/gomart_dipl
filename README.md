@@ -11,6 +11,7 @@ An educational Go backend for the Gophermart loyalty program. The service is des
 - `POST /api/user/orders` endpoint with cookie authentication, Luhn validation, and duplicate ownership checks.
 - `GET /api/user/orders` endpoint returning the authenticated user's orders, newest first, with statuses and available accruals.
 - `POST /api/user/balance/withdraw` endpoint with authenticated, transactional point redemption.
+- `GET /api/user/withdrawals` endpoint returning the authenticated user's withdrawal history, newest first.
 - Password hashing with bcrypt.
 - User storage in PostgreSQL with unique logins.
 - JWT issuance using HS256, with a three-hour token lifetime, delivered in the HttpOnly `user` cookie.
@@ -249,6 +250,29 @@ An identical retry (same order, user, and numeric amount) returns `200` without 
 | `422 Unprocessable Entity` | Invalid order number |
 | `500 Internal Server Error` | Database or transaction error |
 
+### Withdrawal History
+
+`GET /api/user/withdrawals` requires the authenticated `user` cookie. It returns only that user's withdrawals, ordered by `processed_at` descending, with order number descending as a tie-breaker. Dates use RFC3339.
+
+Example `200 OK` response with `Content-Type: application/json`:
+
+```json
+[
+  {
+    "order": "2377225624",
+    "sum": 500,
+    "processed_at": "2020-12-09T16:09:57+03:00"
+  }
+]
+```
+
+| HTTP Status | Meaning |
+| --- | --- |
+| `200 OK` | Withdrawal history returned as a JSON array |
+| `204 No Content` | No withdrawals; empty response body |
+| `401 Unauthorized` | Missing, invalid, or expired authentication cookie |
+| `500 Internal Server Error` | Database or response serialization error |
+
 ## Testing and Static Analysis
 
 ```powershell
@@ -261,6 +285,8 @@ The current tests do not require a running PostgreSQL instance. They cover regis
 Balance tests are grouped in `balance_test.go` within the handler and repository packages. They cover decimal and zero totals, a fully spent balance, authentication failures, request context propagation, storage and serialization errors, and SQL clauses for filtering and aggregation. Routing is checked in `server_test.go`. SQL-driver tests do not execute the aggregation against a real PostgreSQL instance.
 
 Withdrawal tests are included in the same balance test files. They cover request validation, insufficient funds, duplicate handling, transaction commit and rollback, and database errors at each operation. These tests do not verify locking or concurrent execution on a live PostgreSQL instance.
+
+History tests also live in `balance_test.go`: authentication, empty history, JSON fields and RFC3339 dates, user filtering, newest-first SQL ordering, row cleanup, and query/scan/iteration errors. The route is checked in `server_test.go`.
 
 ## Project Structure
 

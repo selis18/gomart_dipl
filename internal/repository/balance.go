@@ -9,6 +9,28 @@ import (
 )
 
 var ErrInsufficientFunds = errors.New("insufficient funds")
+
+func (s *StorageRepo) GetWithdrawals(ctx context.Context, userID string) ([]model.Withdrawal, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT order_number, sum, processed_at
+		FROM withdrawals WHERE user_id = $1 ORDER BY processed_at DESC, order_number DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var withdrawals []model.Withdrawal
+	for rows.Next() {
+		var withdrawal model.Withdrawal
+		if err := rows.Scan(&withdrawal.Order, &withdrawal.Sum, &withdrawal.ProcessedAt); err != nil {
+			return nil, err
+		}
+		withdrawals = append(withdrawals, withdrawal)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return withdrawals, nil
+}
+
 var ErrWithdrawalConflict = errors.New("withdrawal already exists with different details")
 
 func (s *StorageRepo) Withdraw(ctx context.Context, userID, order, sum string) error {

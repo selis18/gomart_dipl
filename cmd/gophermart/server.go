@@ -87,6 +87,7 @@ func newRouter(h *handler.HandlerStorage) http.Handler {
 			r.Get("/orders", h.GetOrdersByUserID)
 			r.Get("/balance", h.GetBalance)
 			r.Post("/balance/withdraw", h.Withdraw)
+			r.Get("/withdrawals", h.GetWithdrawals)
 		})
 	})
 
