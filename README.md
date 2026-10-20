@@ -19,7 +19,23 @@ An educational Go backend for the Gophermart loyalty program. The service is des
 - Configurable logging with zap and graceful HTTP server shutdown on Ctrl+C.
 - Tests for registration, login, order submission, routing, JWT handling, and repository behavior.
 
-`GET /api/user/balance` returns the available balance and total withdrawals from stored operations. Reward processing and integration with the rewards calculation service are not yet implemented.
+`GET /api/user/balance` returns the available balance and total withdrawals from stored operations. When an accrual service address is configured, a background worker polls unfinished orders and saves statuses and accruals to PostgreSQL. It resumes pending orders after a restart, leaves terminal orders unchanged, and stops on server shutdown.
+
+### Rewards Calculation Client
+
+`GET /api/orders/{number}` belongs to the external rewards service described in `SPECIFICATION.md`. Gophermart calls it through `accrual.Client.GetOrder(ctx, number)`; it is not a local HTTP route.
+
+```go
+client, err := accrual.NewClient(os.Getenv("ACCRUAL_SYSTEM_ADDRESS"), nil)
+if err != nil {
+    return err
+}
+order, err := client.GetOrder(ctx, "12345678903")
+```
+
+The constructor requires an HTTP(S) address and accepts an optional `*http.Client`. Requests have a ten-second deadline and preserve caller cancellation. A `200` response contains `order`, `status` (`REGISTERED`, `PROCESSING`, `INVALID`, or `PROCESSED`), and optional `accrual`; an explicit zero accrual is preserved. Malformed responses, mismatched numbers, unknown statuses, and negative amounts return errors.
+
+`204` returns `accrual.ErrNotRegistered`. `429` returns `*accrual.RateLimitError` with `RetryAfter`, supporting seconds and HTTP dates (defaulting to one minute for a missing or invalid header). Other HTTP statuses and transport errors return errors. The client performs no retries or sleeps. The worker polls sequentially every second, pauses all requests on rate limits, and retries missing orders and transient failures. External `REGISTERED` is stored as local `NEW`; `PROCESSING`, `INVALID`, and `PROCESSED` retain their names. Status and accrual are saved in one statement, so existing balance queries include processed rewards without a separate balance credit operation.
 
 ## Tech Stack
 
@@ -82,8 +98,10 @@ The server listens at `http://localhost:8080`. Press Ctrl+C to stop it. The conn
 | `DATABASE_URI` | Yes | PostgreSQL connection string |
 | `SECRET_KEY` | Yes | JWT signing key |
 | `LOG_LEVEL` | No | Log level, such as `debug`, `info`, `warn`, or `error`; defaults to `info` |
+| `RUN_ADDRESS` | No | HTTP listen address; defaults to `localhost:8080`; flag `-a` overrides it |
+| `ACCRUAL_SYSTEM_ADDRESS` | No | HTTP(S) rewards service address; flag `-r` overrides it; polling is disabled when omitted |
 
-The listen address, `localhost:8080`, is currently set in code. Command-line flags and the `RUN_ADDRESS` and `ACCRUAL_SYSTEM_ADDRESS` variables described in the specification are not yet supported. A `.env` file is not loaded automatically.
+The `-d` flag overrides `DATABASE_URI`. For reward processing, set `ACCRUAL_SYSTEM_ADDRESS` (for example, `http://localhost:8081`) or pass `-r`. A `.env` file is not loaded automatically.
 
 ## Example Request
 
@@ -152,7 +170,7 @@ Using the session from registration or login:
 Invoke-WebRequest -Uri 'http://localhost:8080/api/user/orders' -Method Post -ContentType 'text/plain' -Body '12345678903' -WebSession $session
 ```
 
-New orders are stored with their owner, status `NEW`, and upload timestamp. Order numbers are globally unique; concurrent submissions cannot overwrite the original owner. Repeating a submission does not change its status or timestamp. Reward calculation is not implemented yet.
+New orders are stored with their owner, status `NEW`, and upload timestamp. Order numbers are globally unique; concurrent submissions cannot overwrite the original owner. Repeating a submission does not change its status or timestamp. When configured, the background worker retrieves rewards from the external service.
 
 | HTTP Status | Meaning |
 | --- | --- |
@@ -190,7 +208,7 @@ A successful response has `Content-Type: application/json`:
 ]
 ```
 
-Order numbers remain strings, including leading zeroes. `uploaded_at` uses RFC3339. Statuses are `NEW`, `PROCESSING`, `INVALID`, or `PROCESSED`. `accrual` is omitted when no amount is stored; a stored zero is returned as `0`. The response reflects stored data; new submissions remain `NEW` until reward processing is implemented.
+Order numbers remain strings, including leading zeroes. `uploaded_at` uses RFC3339. Statuses are `NEW`, `PROCESSING`, `INVALID`, or `PROCESSED`. `accrual` is omitted when no amount is stored; a stored zero is returned as `0`. The response reflects stored data updated asynchronously by the worker.
 
 | HTTP Status | Meaning |
 | --- | --- |
@@ -218,7 +236,7 @@ Example response (`Content-Type: application/json`):
 
 `current` is the sum of accruals on this user's `PROCESSED` orders minus all their withdrawals. `withdrawn` is the total amount withdrawn over the lifetime of the account. Both totals are read in a single database statement; operations belonging to other users are excluded. PostgreSQL performs the sums and subtraction using `NUMERIC` before the result is converted for the JSON response.
 
-Both fields are always present. A user without operations receives `200 OK` with `{"current":0,"withdrawn":0}`. New orders do not contribute to the balance. Automatic reward processing is not yet implemented.
+Both fields are always present. A user without operations receives `200 OK` with `{"current":0,"withdrawn":0}`. New orders do not contribute to the balance until processing completes.
 
 | HTTP Status | Meaning |
 | --- | --- |
@@ -294,6 +312,7 @@ History tests also live in `balance_test.go`: authentication, empty history, JSO
 cmd/gophermart/       Application entry point, database connection, HTTP server
 internal/
   auth/              JWT and cookie helpers
+  accrual/           External rewards client and background polling worker
   config/            Environment-based configuration
   handler/           HTTP handlers and their tests
   logger/            Logging setup
