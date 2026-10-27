@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/selis18/gomart_dipl/internal/auth"
-	"github.com/selis18/gomart_dipl/internal/config"
 	"github.com/selis18/gomart_dipl/internal/handler"
 	"github.com/selis18/gomart_dipl/internal/model"
 	"github.com/selis18/gomart_dipl/internal/repository"
@@ -21,9 +20,9 @@ func (routerStorage) GetOrdersByUserID(context.Context, string) ([]model.Order, 
 }
 
 func TestGetOrdersRoute(t *testing.T) {
-	t.Setenv("SECRET_KEY", "router-test-secret")
-	config.ParseConfig()
-	token, err := auth.BuildToken("alice")
+	const secret = "router-test-secret"
+
+	token, err := auth.BuildToken("alice", secret)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +34,7 @@ func TestGetOrdersRoute(t *testing.T) {
 			want = http.StatusNoContent
 		}
 		w := httptest.NewRecorder()
-		newRouter(handler.NewHandlerStorage(routerStorage{})).ServeHTTP(w, r)
+		newRouter(handler.NewHandlerStorage(routerStorage{}, secret)).ServeHTTP(w, r)
 		if w.Code != want {
 			t.Errorf("status = %d, want %d", w.Code, want)
 		}
@@ -44,9 +43,9 @@ func TestGetOrdersRoute(t *testing.T) {
 
 func (routerStorage) AddOrder(context.Context, string, string) error { return nil }
 func TestOrdersRoute(t *testing.T) {
-	t.Setenv("SECRET_KEY", "router-test-secret")
-	config.ParseConfig()
-	token, err := auth.BuildToken("alice")
+	const secret = "router-test-secret"
+
+	token, err := auth.BuildToken("alice", secret)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +58,7 @@ func TestOrdersRoute(t *testing.T) {
 			want = http.StatusAccepted
 		}
 		w := httptest.NewRecorder()
-		newRouter(handler.NewHandlerStorage(routerStorage{})).ServeHTTP(w, r)
+		newRouter(handler.NewHandlerStorage(routerStorage{}, secret)).ServeHTTP(w, r)
 		if w.Code != want {
 			t.Errorf("status = %d, want %d", w.Code, want)
 		}
@@ -71,9 +70,9 @@ func (routerStorage) GetBalance(context.Context, string) (model.Balance, error) 
 }
 
 func TestBalanceRoute(t *testing.T) {
-	t.Setenv("SECRET_KEY", "router-test-secret")
-	config.ParseConfig()
-	token, err := auth.BuildToken("alice")
+	const secret = "router-test-secret"
+
+	token, err := auth.BuildToken("alice", secret)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +84,7 @@ func TestBalanceRoute(t *testing.T) {
 			want = http.StatusOK
 		}
 		w := httptest.NewRecorder()
-		newRouter(handler.NewHandlerStorage(routerStorage{})).ServeHTTP(w, r)
+		newRouter(handler.NewHandlerStorage(routerStorage{}, secret)).ServeHTTP(w, r)
 		if w.Code != want {
 			t.Errorf("status=%d, want %d", w.Code, want)
 		}
@@ -95,9 +94,9 @@ func TestBalanceRoute(t *testing.T) {
 func (routerStorage) Withdraw(context.Context, string, string, string) error { return nil }
 
 func TestWithdrawRoute(t *testing.T) {
-	t.Setenv("SECRET_KEY", "router-test-secret")
-	config.ParseConfig()
-	token, err := auth.BuildToken("alice")
+	const secret = "router-test-secret"
+
+	token, err := auth.BuildToken("alice", secret)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +109,7 @@ func TestWithdrawRoute(t *testing.T) {
 			want = 200
 		}
 		w := httptest.NewRecorder()
-		newRouter(handler.NewHandlerStorage(routerStorage{})).ServeHTTP(w, r)
+		newRouter(handler.NewHandlerStorage(routerStorage{}, secret)).ServeHTTP(w, r)
 		if w.Code != want {
 			t.Errorf("status=%d want %d", w.Code, want)
 		}
@@ -121,9 +120,9 @@ func (routerStorage) GetWithdrawals(context.Context, string) ([]model.Withdrawal
 	return nil, nil
 }
 func TestWithdrawalsRoute(t *testing.T) {
-	t.Setenv("SECRET_KEY", "router-test-secret")
-	config.ParseConfig()
-	token, err := auth.BuildToken("alice")
+	const secret = "router-test-secret"
+
+	token, err := auth.BuildToken("alice", secret)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +134,7 @@ func TestWithdrawalsRoute(t *testing.T) {
 			want = http.StatusNoContent
 		}
 		w := httptest.NewRecorder()
-		newRouter(handler.NewHandlerStorage(routerStorage{})).ServeHTTP(w, r)
+		newRouter(handler.NewHandlerStorage(routerStorage{}, secret)).ServeHTTP(w, r)
 		if w.Code != want {
 			t.Errorf("status=%d want %d", w.Code, want)
 		}

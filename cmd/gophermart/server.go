@@ -11,8 +11,8 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/selis18/gomart_dipl/internal/accrual"
 	"github.com/selis18/gomart_dipl/internal/handler"
@@ -22,7 +22,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func InitServer() error {
+func InitServer(secret string) error {
 	cfg, err := parseRuntimeConfig(os.Args[1:])
 	if err != nil {
 		return err
@@ -53,7 +53,7 @@ func InitServer() error {
 	}
 
 	storage := repository.NewStorageRepo(db)
-	handlers := handler.NewHandlerStorage(storage)
+	handlers := handler.NewHandlerStorage(storage, secret)
 	var worker *accrual.Worker
 	if cfg.accrualAddress != "" {
 		client, err := accrual.NewClient(cfg.accrualAddress, nil)
@@ -115,6 +115,7 @@ func startServer(h *handler.HandlerStorage, address string, worker *accrual.Work
 
 func newRouter(h *handler.HandlerStorage) http.Handler {
 	r := chi.NewRouter()
+	r.Use(logger.RequestLogger)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/user", func(r chi.Router) {

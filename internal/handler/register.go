@@ -32,7 +32,7 @@ func (h *HandlerStorage) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(req.Login) == "" || req.Password == "" {
+	if strings.TrimSpace(req.Login) == "" || len(req.Login) > 255 || req.Password == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -62,7 +62,7 @@ func (h *HandlerStorage) Register(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	token, err := auth.BuildToken(userID)
+	token, err := auth.BuildToken(userID, h.secret)
 	if err != nil {
 		logger.Log.Error("build auth token", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)

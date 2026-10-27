@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/selis18/gomart_dipl/internal/auth"
-	"github.com/selis18/gomart_dipl/internal/config"
 	"github.com/selis18/gomart_dipl/internal/repository"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -29,8 +28,8 @@ func (f registerStorageFunc) RegisterUser(ctx context.Context, login, hash strin
 }
 
 func TestRegisterSuccess(t *testing.T) {
-	t.Setenv("SECRET_KEY", "handler-test-secret")
-	config.ParseConfig()
+	const secret = "handler-test-secret"
+
 	type contextKey struct{}
 	ctx := context.WithValue(context.Background(), contextKey{}, "request-value")
 	calls := 0
@@ -49,7 +48,7 @@ func TestRegisterSuccess(t *testing.T) {
 	})
 	r := httptest.NewRequest(http.MethodPost, "/api/user/register", strings.NewReader(`{"login":"alice","password":"password"}`)).WithContext(ctx)
 	w := httptest.NewRecorder()
-	NewHandlerStorage(storage).Register(w, r)
+	NewHandlerStorage(storage, secret).Register(w, r)
 	if w.Code != http.StatusOK || calls != 1 {
 		t.Fatalf("status = %d, storage calls = %d; want 200 and 1", w.Code, calls)
 	}
@@ -63,7 +62,7 @@ func TestRegisterSuccess(t *testing.T) {
 	if cookie.Name != "user" || cookie.Path != "/" || !cookie.HttpOnly {
 		t.Errorf("unexpected cookie attributes: %+v", cookie)
 	}
-	id, err := auth.ParseToken(cookie.Value)
+	id, err := auth.ParseToken(cookie.Value, secret)
 	if err != nil || id != "database-user-id" {
 		t.Fatalf("cookie user ID = %q, error = %v", id, err)
 	}
@@ -96,7 +95,7 @@ func TestRegisterInvalidRequest(t *testing.T) {
 			})
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodPost, "/api/user/register", strings.NewReader(tt.body))
-			NewHandlerStorage(storage).Register(w, r)
+			NewHandlerStorage(storage, "test-secret").Register(w, r)
 			if w.Code != http.StatusBadRequest {
 				t.Errorf("status = %d, want 400", w.Code)
 			}
@@ -124,7 +123,7 @@ func TestRegisterStorageErrors(t *testing.T) {
 			storage := registerStorageFunc(func(context.Context, string, string) (string, error) { return "", tt.err })
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodPost, "/api/user/register", strings.NewReader(`{"login":"alice","password":"secret"}`))
-			NewHandlerStorage(storage).Register(w, r)
+			NewHandlerStorage(storage, "test-secret").Register(w, r)
 			if w.Code != tt.status {
 				t.Errorf("status = %d, want %d", w.Code, tt.status)
 			}

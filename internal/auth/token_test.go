@@ -5,17 +5,16 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/selis18/gomart_dipl/internal/config"
 )
 
 func TestTokenRoundTrip(t *testing.T) {
-	t.Setenv("SECRET_KEY", "token-test-secret")
-	config.ParseConfig()
-	token, err := BuildToken("database-user-id")
+	const secret = "token-test-secret"
+
+	token, err := BuildToken("database-user-id", secret)
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := ParseToken(token)
+	id, err := ParseToken(token, secret)
 	if err != nil || id != "database-user-id" {
 		t.Fatalf("ParseToken = (%q, %v), want database-user-id", id, err)
 	}
@@ -23,8 +22,7 @@ func TestTokenRoundTrip(t *testing.T) {
 
 func TestParseTokenRejectsInvalidTokens(t *testing.T) {
 	const secret = "token-test-secret"
-	t.Setenv("SECRET_KEY", secret)
-	config.ParseConfig()
+
 	for _, tt := range []struct {
 		name, id, key string
 		expires       time.Time
@@ -41,12 +39,12 @@ func TestParseTokenRejectsInvalidTokens(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if id, err := ParseToken(token); err == nil || id != "" {
+			if id, err := ParseToken(token, secret); err == nil || id != "" {
 				t.Errorf("ParseToken = (%q, %v), want rejection", id, err)
 			}
 		})
 	}
-	if _, err := ParseToken("not-a-jwt"); err == nil {
+	if _, err := ParseToken("not-a-jwt", secret); err == nil {
 		t.Error("malformed token accepted")
 	}
 }

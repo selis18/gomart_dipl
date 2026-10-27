@@ -6,10 +6,12 @@ import (
 
 type HandlerStorage struct {
 	storage repository.Storage
+	secret  string
 }
 
-func NewHandlerStorage(s repository.Storage) *HandlerStorage {
+func NewHandlerStorage(s repository.Storage, secret string) *HandlerStorage {
 	return &HandlerStorage{
 		storage: s,
+		secret:  secret,
 	}
 }

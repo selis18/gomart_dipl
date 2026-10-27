@@ -1,2 +1,4 @@
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS users;
+
+DROP TYPE IF EXISTS order_status;

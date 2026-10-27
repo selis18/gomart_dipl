@@ -35,7 +35,7 @@ order, err := client.GetOrder(ctx, "12345678903")
 
 The constructor requires an HTTP(S) address and accepts an optional `*http.Client`. Requests have a ten-second deadline and preserve caller cancellation. A `200` response contains `order`, `status` (`REGISTERED`, `PROCESSING`, `INVALID`, or `PROCESSED`), and optional `accrual`; an explicit zero accrual is preserved. Malformed responses, mismatched numbers, unknown statuses, and negative amounts return errors.
 
-`204` returns `accrual.ErrNotRegistered`. `429` returns `*accrual.RateLimitError` with `RetryAfter`, supporting seconds and HTTP dates (defaulting to one minute for a missing or invalid header). Other HTTP statuses and transport errors return errors. The client performs no retries or sleeps. The worker polls sequentially every second, pauses all requests on rate limits, and retries missing orders and transient failures. External `REGISTERED` is stored as local `NEW`; `PROCESSING`, `INVALID`, and `PROCESSED` retain their names. Status and accrual are saved in one statement, so existing balance queries include processed rewards without a separate balance credit operation.
+`204` returns `accrual.ErrNotRegistered`. `429` returns `*accrual.RateLimitError` with `RetryAfter`, supporting seconds and HTTP dates (defaulting to one minute for a missing or invalid header). Other HTTP statuses and transport errors return errors. The client retries HTTP 5xx up to four total attempts, with delays of 100, 200, and 400 milliseconds within the same ten-second deadline. The worker polls every second using a pool of four workers. A 429 cancels the current batch, including in-flight requests, and pauses the entire pool for at least Retry-After before polling again. Invalid Retry-After headers are logged with their original value and use a one-minute fallback. Shutdown interrupts requests, retry delays, and the shared pause. Missing orders and transient failures are retried on the next poll. External `REGISTERED` is stored as local `NEW`; `PROCESSING`, `INVALID`, and `PROCESSED` retain their names. Status and accrual are saved in one statement, so existing balance queries include processed rewards without a separate balance credit operation.
 
 ## Tech Stack
 
@@ -70,9 +70,10 @@ psql -h localhost -p 5432 -U postgres -c "CREATE DATABASE gophermart;"
 psql -h localhost -p 5432 -U postgres -d gophermart -v ON_ERROR_STOP=1 -f internal/migrations/000001_create_tables.up.sql
 psql -h localhost -p 5432 -U postgres -d gophermart -v ON_ERROR_STOP=1 -f internal/migrations/000002_order_accrual.up.sql
 psql -h localhost -p 5432 -U postgres -d gophermart -v ON_ERROR_STOP=1 -f internal/migrations/000003_withdrawals.up.sql
+psql -h localhost -p 5432 -U postgres -d gophermart -v ON_ERROR_STOP=1 -f internal/migrations/000004_field_constraints.up.sql
 ```
 
-If the database already exists, skip the database creation command. The migrations create the `users`, `orders`, and `withdrawals` tables, add the optional `accrual` column, and index orders and withdrawals by user and time. The application applies all three idempotent migrations automatically at startup, including on an existing database. Apply down migrations in reverse order.
+If the database already exists, skip the database creation command. The migrations create the `users`, `orders`, and `withdrawals` tables, add the optional `accrual` column, and index orders and withdrawals by user and time. The application applies all four idempotent migrations automatically at startup, including on an existing database. Apply down migrations in reverse order.
 
 ### 3. Configure the Environment and Start the Server
 
@@ -323,3 +324,9 @@ SPECIFICATION.md     Full project specification (in Russian)
 ```
 
 Developed as a diploma project for the Yandex Practicum Go Developer course, based on the course's diploma project template.
+
+### Schema limits and CI secret
+
+User IDs have at most 32 characters, logins 255, bcrypt hashes 60, and order numbers 128 (including withdrawal order numbers). Registration accepts passwords up to 72 bytes. HTTP handlers reject oversized logins and order numbers before writing to storage. Order status uses the PostgreSQL `order_status` enum: `NEW`, `PROCESSING`, `INVALID`, `PROCESSED`. Migration 000004 upgrades existing tables, preserving foreign keys and rejecting incompatible existing data.
+
+Before running GitHub Actions, add a repository secret named `SECRET_KEY` in **Settings → Secrets and variables → Actions**. The workflow reads `${{ secrets.SECRET_KEY }}`. Generate a fresh random key; the previously committed key must be replaced.

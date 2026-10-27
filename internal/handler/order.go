@@ -8,7 +8,9 @@ import (
 	"net/http"
 
 	"github.com/selis18/gomart_dipl/internal/auth"
+	"github.com/selis18/gomart_dipl/internal/logger"
 	"github.com/selis18/gomart_dipl/internal/repository"
+	"go.uber.org/zap"
 )
 
 func (h *HandlerStorage) PostOrder(w http.ResponseWriter, r *http.Request) {
@@ -17,7 +19,7 @@ func (h *HandlerStorage) PostOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	userID, err := auth.ParseToken(cookie.Value)
+	userID, err := auth.ParseToken(cookie.Value, h.secret)
 	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -46,13 +48,14 @@ func (h *HandlerStorage) PostOrder(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, repository.ErrOrderConflict):
 		http.Error(w, "order belongs to another user", http.StatusConflict)
 	default:
+		logger.Log.Error("order request failed", zap.String("operation", r.Method+" "+r.URL.Path), zap.Error(err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
 
 // Luhn algorithm
 func validOrderNumber(number string) bool {
-	if number == "" {
+	if number == "" || len(number) > 128 {
 		return false
 	}
 	sum, double := 0, false
@@ -79,13 +82,14 @@ func (h *HandlerStorage) GetOrdersByUserID(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	userID, err := auth.ParseToken(cookie.Value)
+	userID, err := auth.ParseToken(cookie.Value, h.secret)
 	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	orders, err := h.storage.GetOrdersByUserID(r.Context(), userID)
 	if err != nil {
+		logger.Log.Error("order request failed", zap.String("operation", r.Method+" "+r.URL.Path), zap.Error(err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -95,6 +99,7 @@ func (h *HandlerStorage) GetOrdersByUserID(w http.ResponseWriter, r *http.Reques
 	}
 	body, err := json.Marshal(orders)
 	if err != nil {
+		logger.Log.Error("order request failed", zap.String("operation", r.Method+" "+r.URL.Path), zap.Error(err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}

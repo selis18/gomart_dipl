@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -143,8 +144,78 @@ func TestRetryAfter(t *testing.T) {
 		{now.Add(2 * time.Minute).Format(http.TimeFormat), 2 * time.Minute},
 		{now.Add(-time.Minute).Format(http.TimeFormat), 0},
 	} {
-		if got := retryAfter(tt.value, now); got != tt.want {
-			t.Errorf("%q: got %s want %s", tt.value, got, tt.want)
+		if got, err := retryAfter(tt.value, now); got != tt.want {
+			t.Errorf("%q: got %s want %s (%v)", tt.value, got, tt.want, err)
+		}
+	}
+}
+
+func TestGetOrderRetriesServerErrors(t *testing.T) {
+	for _, recover := range []bool{true, false} {
+		t.Run(fmt.Sprint(recover), func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				n := calls.Add(1)
+				if !recover || n < 3 {
+					w.WriteHeader(503)
+					return
+				}
+				fmt.Fprint(w, `{"order":"18","status":"PROCESSED"}`)
+			}))
+			defer server.Close()
+			client, _ := NewClient(server.URL, server.Client())
+			order, err := client.GetOrder(context.Background(), "18")
+			if recover {
+				if err != nil || order.Status != "PROCESSED" || calls.Load() != 3 {
+					t.Fatalf("order=%+v err=%v calls=%d", order, err, calls.Load())
+				}
+			} else if err == nil || calls.Load() != 4 {
+				t.Fatalf("err=%v calls=%d", err, calls.Load())
+			}
+		})
+	}
+}
+
+func TestGetOrderCancelsRetryDelay(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(503)
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	done := make(chan error, 1)
+	go func() { _, err := client.GetOrder(ctx, "18"); done <- err }()
+	deadline := time.After(time.Second)
+	for calls.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("request did not start")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("retry did not stop")
+	}
+	if calls.Load() != 1 {
+		t.Fatal("retried after cancellation")
+	}
+}
+
+func TestRetryAfterSignalsFallback(t *testing.T) {
+	for _, value := range []string{"", "bad", "-1", "9223372036854775807"} {
+		delay, err := retryAfter(value, time.Now())
+		if delay != time.Minute || err == nil || !strings.Contains(err.Error(), value) {
+			t.Fatalf("value=%q delay=%s err=%v", value, delay, err)
 		}
 	}
 }

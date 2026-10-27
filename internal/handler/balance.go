@@ -9,7 +9,9 @@ import (
 	"net/http"
 
 	"github.com/selis18/gomart_dipl/internal/auth"
+	"github.com/selis18/gomart_dipl/internal/logger"
 	"github.com/selis18/gomart_dipl/internal/repository"
+	"go.uber.org/zap"
 )
 
 func (h *HandlerStorage) Withdraw(w http.ResponseWriter, r *http.Request) {
@@ -19,7 +21,7 @@ func (h *HandlerStorage) Withdraw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := auth.ParseToken(cookie.Value)
+	userID, err := auth.ParseToken(cookie.Value, h.secret)
 	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -66,6 +68,7 @@ func (h *HandlerStorage) Withdraw(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, repository.ErrWithdrawalConflict):
 		http.Error(w, "withdrawal already exists with different details", http.StatusConflict)
 	default:
+		logger.Log.Error("balance request failed", zap.String("operation", r.Method+" "+r.URL.Path), zap.Error(err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -76,18 +79,20 @@ func (h *HandlerStorage) GetBalance(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	userID, err := auth.ParseToken(cookie.Value)
+	userID, err := auth.ParseToken(cookie.Value, h.secret)
 	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	balance, err := h.storage.GetBalance(r.Context(), userID)
 	if err != nil {
+		logger.Log.Error("balance request failed", zap.String("operation", r.Method+" "+r.URL.Path), zap.Error(err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	body, err := json.Marshal(balance)
 	if err != nil {
+		logger.Log.Error("balance request failed", zap.String("operation", r.Method+" "+r.URL.Path), zap.Error(err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -103,13 +108,14 @@ func (h *HandlerStorage) GetWithdrawals(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	userID, err := auth.ParseToken(cookie.Value)
+	userID, err := auth.ParseToken(cookie.Value, h.secret)
 	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	withdrawals, err := h.storage.GetWithdrawals(r.Context(), userID)
 	if err != nil {
+		logger.Log.Error("balance request failed", zap.String("operation", r.Method+" "+r.URL.Path), zap.Error(err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -119,6 +125,7 @@ func (h *HandlerStorage) GetWithdrawals(w http.ResponseWriter, r *http.Request) 
 	}
 	body, err := json.Marshal(withdrawals)
 	if err != nil {
+		logger.Log.Error("balance request failed", zap.String("operation", r.Method+" "+r.URL.Path), zap.Error(err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}

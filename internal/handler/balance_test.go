@@ -13,7 +13,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/selis18/gomart_dipl/internal/auth"
-	"github.com/selis18/gomart_dipl/internal/config"
 	"github.com/selis18/gomart_dipl/internal/model"
 	"github.com/selis18/gomart_dipl/internal/repository"
 )
@@ -28,13 +27,13 @@ func (s balanceStorage) GetBalance(ctx context.Context, id string) (model.Balanc
 }
 
 func TestGetBalance(t *testing.T) {
-	t.Setenv("SECRET_KEY", "balance-test-secret")
-	config.ParseConfig()
-	token, err := auth.BuildToken("alice")
+	const secret = "balance-test-secret"
+
+	token, err := auth.BuildToken("alice", secret)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expired, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"UserID": "alice", "exp": time.Now().Add(-time.Hour).Unix()}).SignedString([]byte(config.GetSecretKey()))
+	expired, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"UserID": "alice", "exp": time.Now().Add(-time.Hour).Unix()}).SignedString([]byte(secret))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +69,7 @@ func TestGetBalance(t *testing.T) {
 				r.AddCookie(&http.Cookie{Name: "user", Value: tt.cookie})
 			}
 			w := httptest.NewRecorder()
-			NewHandlerStorage(s).GetBalance(w, r)
+			NewHandlerStorage(s, secret).GetBalance(w, r)
 			if w.Code != tt.status {
 				t.Fatalf("status=%d, want %d", w.Code, tt.status)
 			}
@@ -111,9 +110,9 @@ func (s withdrawalStorage) Withdraw(ctx context.Context, user, order, sum string
 	return s.withdraw(ctx, user, order, sum)
 }
 func TestWithdraw(t *testing.T) {
-	t.Setenv("SECRET_KEY", "withdraw-test-secret")
-	config.ParseConfig()
-	token, err := auth.BuildToken("alice")
+	const secret = "withdraw-test-secret"
+
+	token, err := auth.BuildToken("alice", secret)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +156,7 @@ func TestWithdraw(t *testing.T) {
 				r.AddCookie(&http.Cookie{Name: "user", Value: tt.cookie})
 			}
 			w := httptest.NewRecorder()
-			NewHandlerStorage(s).Withdraw(w, r)
+			NewHandlerStorage(s, secret).Withdraw(w, r)
 			if w.Code != tt.status {
 				t.Errorf("status=%d want %d", w.Code, tt.status)
 			}
@@ -182,13 +181,13 @@ func (s withdrawalsStorage) GetWithdrawals(ctx context.Context, id string) ([]mo
 	return s.get(ctx, id)
 }
 func TestGetWithdrawals(t *testing.T) {
-	t.Setenv("SECRET_KEY", "withdrawals-test-secret")
-	config.ParseConfig()
-	token, err := auth.BuildToken("alice")
+	const secret = "withdrawals-test-secret"
+
+	token, err := auth.BuildToken("alice", secret)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expired, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"UserID": "alice", "exp": time.Now().Add(-time.Hour).Unix()}).SignedString([]byte(config.GetSecretKey()))
+	expired, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"UserID": "alice", "exp": time.Now().Add(-time.Hour).Unix()}).SignedString([]byte(secret))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +224,7 @@ func TestGetWithdrawals(t *testing.T) {
 				r.AddCookie(&http.Cookie{Name: "user", Value: tt.cookie})
 			}
 			w := httptest.NewRecorder()
-			NewHandlerStorage(s).GetWithdrawals(w, r)
+			NewHandlerStorage(s, secret).GetWithdrawals(w, r)
 			if w.Code != tt.status {
 				t.Fatalf("status=%d want %d", w.Code, tt.status)
 			}

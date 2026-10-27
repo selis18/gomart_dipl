@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS withdrawals (
-    order_number TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id),
+    order_number VARCHAR(128) PRIMARY KEY,
+    user_id VARCHAR(32) NOT NULL REFERENCES users(id),
     sum NUMERIC NOT NULL CHECK (sum > 0),
     processed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

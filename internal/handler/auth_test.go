@@ -7,13 +7,10 @@ import (
 	"github.com/selis18/gomart_dipl/internal/model"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/selis18/gomart_dipl/internal/auth"
-	"github.com/selis18/gomart_dipl/internal/config"
 	"github.com/selis18/gomart_dipl/internal/repository"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -29,8 +26,8 @@ func (f loginStorageFunc) RegisterUser(context.Context, string, string) (string,
 }
 
 func TestAuthSuccess(t *testing.T) {
-	t.Setenv("SECRET_KEY", "login-test-secret")
-	config.ParseConfig()
+	const secret = "login-test-secret"
+
 	hash, err := bcrypt.GenerateFromPassword([]byte("password"), bcrypt.MinCost)
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +47,7 @@ func TestAuthSuccess(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/user/login", strings.NewReader(`{"login":"alice","password":"password"}`)).WithContext(ctx)
-	NewHandlerStorage(storage).Auth(w, r)
+	NewHandlerStorage(storage, secret).Auth(w, r)
 	if w.Code != http.StatusOK || calls != 1 {
 		t.Fatalf("status = %d, storage calls = %d; want 200 and 1", w.Code, calls)
 	}
@@ -64,7 +61,7 @@ func TestAuthSuccess(t *testing.T) {
 	if cookie.Name != "user" || cookie.Path != "/" || !cookie.HttpOnly {
 		t.Errorf("unexpected cookie attributes: %+v", cookie)
 	}
-	id, err := auth.ParseToken(cookie.Value)
+	id, err := auth.ParseToken(cookie.Value, secret)
 	if err != nil || id != "existing-user-id" {
 		t.Fatalf("cookie user ID = %q, error = %v", id, err)
 	}
@@ -90,7 +87,7 @@ func TestAuthInvalidRequest(t *testing.T) {
 			})
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodPost, "/api/user/login", strings.NewReader(tt.body))
-			NewHandlerStorage(storage).Auth(w, r)
+			NewHandlerStorage(storage, "test-secret").Auth(w, r)
 			if w.Code != http.StatusBadRequest {
 				t.Errorf("status = %d, want 400", w.Code)
 			}
@@ -117,8 +114,7 @@ func TestAuthFailures(t *testing.T) {
 		{"database failure", "correct-password", "test-secret", errors.New("database unavailable"), http.StatusInternalServerError},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("SECRET_KEY", tt.secret)
-			config.ParseConfig()
+
 			calls := 0
 			storage := loginStorageFunc(func(context.Context, string) (string, string, error) {
 				calls++
@@ -127,7 +123,7 @@ func TestAuthFailures(t *testing.T) {
 			w := httptest.NewRecorder()
 			body := fmt.Sprintf(`{"login":"alice","password":%q}`, tt.password)
 			r := httptest.NewRequest(http.MethodPost, "/api/user/login", strings.NewReader(body))
-			NewHandlerStorage(storage).Auth(w, r)
+			NewHandlerStorage(storage, tt.secret).Auth(w, r)
 			if w.Code != tt.status || calls != 1 {
 				t.Errorf("status = %d, storage calls = %d; want %d and 1", w.Code, calls, tt.status)
 			}
@@ -139,20 +135,6 @@ func TestAuthFailures(t *testing.T) {
 }
 
 func TestAuthTokenFailure(t *testing.T) {
-	// Config retains a previously loaded secret, so use a fresh process.
-	if os.Getenv("LOGIN_TOKEN_FAILURE_HELPER") != "1" {
-		t.Setenv("LOGIN_TOKEN_FAILURE_HELPER", "1")
-		t.Setenv("SECRET_KEY", "")
-		cmd := exec.Command(os.Args[0], "-test.run=^TestAuthTokenFailure$")
-		if output, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("isolated token failure test: %v\n%s", err, output)
-		}
-		return
-	}
-	config.ParseConfig()
-	if config.GetSecretKey() != "" {
-		t.Fatal("test requires an empty signing key")
-	}
 	hash, err := bcrypt.GenerateFromPassword([]byte("password"), bcrypt.MinCost)
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +144,7 @@ func TestAuthTokenFailure(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/user/login", strings.NewReader(`{"login":"alice","password":"password"}`))
-	NewHandlerStorage(storage).Auth(w, r)
+	NewHandlerStorage(storage, "").Auth(w, r)
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", w.Code)
 	}

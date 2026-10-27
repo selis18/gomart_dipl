@@ -52,7 +52,7 @@ jobs:
 
       - name: Test
         env:
-          SECRET_KEY: secret-new-way-key
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
         run: |
           gophermarttest \
             -test.v -test.run=^TestGophermart$ \

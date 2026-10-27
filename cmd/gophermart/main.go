@@ -8,18 +8,15 @@ import (
 )
 
 func main() {
-	config.ParseConfig()
-	if config.GetSecretKey() == "" {
-		log.Fatal("SECRET_KEY is empty")
+	cfg, err := config.ParseConfig()
+	if err != nil {
+		log.Fatalf("parse configuration: %v", err)
 	}
-	level := config.GetLogLevel()
-	if level == "" {
-		level = "info"
-	}
+	level := cfg.LogLevel
 	if err := logger.Initialize(level); err != nil {
 		log.Fatal(err)
 	}
-	if err := InitServer(); err != nil {
+	if err := InitServer(cfg.SecretKey); err != nil {
 		log.Fatal(err)
 	}
 }

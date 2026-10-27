@@ -1,12 +1,17 @@
+DO $$ BEGIN
+    CREATE TYPE order_status AS ENUM ('NEW', 'PROCESSING', 'INVALID', 'PROCESSED');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    login TEXT NOT NULL UNIQUE,
-    password TEXT NOT NULL
+    id VARCHAR(32) PRIMARY KEY,
+    login VARCHAR(255) NOT NULL UNIQUE,
+    password VARCHAR(60) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS orders (
-    number TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id),
-    status TEXT NOT NULL DEFAULT 'NEW',
+    number VARCHAR(128) PRIMARY KEY,
+    user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+    status order_status NOT NULL DEFAULT 'NEW',
     uploaded_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

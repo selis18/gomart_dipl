@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/selis18/gomart_dipl/internal/auth"
-	"github.com/selis18/gomart_dipl/internal/config"
 	"github.com/selis18/gomart_dipl/internal/repository"
 )
 
@@ -35,9 +34,9 @@ type brokenBody struct{}
 func (brokenBody) Read([]byte) (int, error) { return 0, errors.New("read failure") }
 
 func TestPostOrder(t *testing.T) {
-	t.Setenv("SECRET_KEY", "order-test-secret")
-	config.ParseConfig()
-	token, err := auth.BuildToken("alice")
+	const secret = "order-test-secret"
+
+	token, err := auth.BuildToken("alice", secret)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +84,7 @@ func TestPostOrder(t *testing.T) {
 				r.AddCookie(&http.Cookie{Name: "user", Value: tt.cookie})
 			}
 			w := httptest.NewRecorder()
-			NewHandlerStorage(s).PostOrder(w, r)
+			NewHandlerStorage(s, secret).PostOrder(w, r)
 			if w.Code != tt.status {
 				t.Errorf("status = %d, want %d", w.Code, tt.status)
 			}
@@ -122,13 +121,13 @@ func (s listStorage) GetOrdersByUserID(ctx context.Context, id string) ([]model.
 }
 
 func TestGetOrders(t *testing.T) {
-	t.Setenv("SECRET_KEY", "list-secret")
-	config.ParseConfig()
-	token, err := auth.BuildToken("alice")
+	const secret = "list-secret"
+
+	token, err := auth.BuildToken("alice", secret)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expired, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"UserID": "alice", "exp": time.Now().Add(-time.Hour).Unix()}).SignedString([]byte(config.GetSecretKey()))
+	expired, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"UserID": "alice", "exp": time.Now().Add(-time.Hour).Unix()}).SignedString([]byte(secret))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +172,7 @@ func TestGetOrders(t *testing.T) {
 				r.AddCookie(&http.Cookie{Name: "user", Value: tt.cookie})
 			}
 			w := httptest.NewRecorder()
-			NewHandlerStorage(storage).GetOrdersByUserID(w, r)
+			NewHandlerStorage(storage, secret).GetOrdersByUserID(w, r)
 			if w.Code != tt.status {
 				t.Fatalf("status=%d, want %d", w.Code, tt.status)
 			}

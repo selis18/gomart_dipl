@@ -1,38 +1,14 @@
 package config
 
-import (
-	"github.com/caarlos0/env"
-	"go.uber.org/zap"
-)
+import "github.com/caarlos0/env/v11"
 
 type Config struct {
-	LogLevel  string `env:"LOG_LEVEL"`
-	SecretKey string `env:"SECRET_KEY"`
+	LogLevel  string `env:"LOG_LEVEL" envDefault:"info"`
+	SecretKey string `env:"SECRET_KEY,required,notEmpty"`
 }
 
-var secretKey string
-var logLevel string
-
-func ParseConfig() {
-	cfg := Config{}
+func ParseConfig() (Config, error) {
+	var cfg Config
 	err := env.Parse(&cfg)
-	if err != nil {
-		zap.NamedError("Config parser error: ", err)
-	}
-
-	if cfg.SecretKey != "" {
-		secretKey = cfg.SecretKey
-	}
-
-	if cfg.LogLevel != "" {
-		logLevel = cfg.LogLevel
-	}
-}
-
-func GetSecretKey() string {
-	return secretKey
-}
-
-func GetLogLevel() string {
-	return logLevel
+	return cfg, err
 }

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/selis18/gomart_dipl/internal/config"
 )
 
 type claims struct {
@@ -16,8 +15,7 @@ type claims struct {
 
 var ErrSecretKeyEmpty = errors.New("secret key is empty")
 
-func BuildToken(id string) (string, error) {
-	secret := config.GetSecretKey()
+func BuildToken(id, secret string) (string, error) {
 	if secret == "" {
 		return "", ErrSecretKeyEmpty
 	}
@@ -31,8 +29,7 @@ func BuildToken(id string) (string, error) {
 	return token.SignedString([]byte(secret))
 }
 
-func ParseToken(tokenString string) (string, error) {
-	secret := config.GetSecretKey()
+func ParseToken(tokenString, secret string) (string, error) {
 	if secret == "" {
 		return "", ErrSecretKeyEmpty
 	}

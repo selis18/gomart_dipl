@@ -16,6 +16,9 @@ var orderAccrualSQL string
 //go:embed 000003_withdrawals.up.sql
 var withdrawalsSQL string
 
+//go:embed 000004_field_constraints.up.sql
+var fieldConstraintsSQL string
+
 func Apply(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, createTablesSQL); err != nil {
 		return fmt.Errorf("create database tables: %w", err)
@@ -25,6 +28,9 @@ func Apply(ctx context.Context, db *sql.DB) error {
 	}
 	if _, err := db.ExecContext(ctx, withdrawalsSQL); err != nil {
 		return fmt.Errorf("create withdrawals: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, fieldConstraintsSQL); err != nil {
+		return fmt.Errorf("constrain database fields: %w", err)
 	}
 	return nil
 }
