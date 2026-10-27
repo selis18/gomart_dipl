@@ -67,13 +67,15 @@ func (c *Client) GetOrder(ctx context.Context, number string) (Order, error) {
 		if err != nil {
 			return Order{}, fmt.Errorf("get accrual order: %w", err)
 		}
+
 		if resp.StatusCode < 500 || resp.StatusCode > 599 || attempt == attempts-1 {
 			break
 		}
-		// Bound draining so a large error body cannot delay the retry indefinitely.
+
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		resp.Body.Close()
 		timer := time.NewTimer(100 * time.Millisecond << attempt)
+
 		select {
 		case <-ctx.Done():
 			timer.Stop()

@@ -46,8 +46,7 @@ func (w *Worker) poll(ctx context.Context) time.Duration {
 		w.log(err)
 		return time.Second
 	}
-	// A batch cancellation stops dispatch and interrupts in-flight HTTP requests
-	// when any worker receives 429. Run applies the shared pause to the whole pool.
+
 	batchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	const poolSize = 4
@@ -75,6 +74,7 @@ func (w *Worker) poll(ctx context.Context) time.Duration {
 			}
 		}()
 	}
+
 	go func() {
 		defer close(jobs)
 		for _, number := range orders {
@@ -85,6 +85,7 @@ func (w *Worker) poll(ctx context.Context) time.Duration {
 			}
 		}
 	}()
+
 	go func() { wg.Wait(); close(results) }()
 	delay := time.Second
 	for result := range results {

@@ -1,4 +1,4 @@
--- Upgrade existing tables as well as validating the fresh schema.
+
 BEGIN;
 ALTER TABLE orders DROP CONSTRAINT orders_user_id_fkey;
 ALTER TABLE withdrawals DROP CONSTRAINT withdrawals_user_id_fkey;
