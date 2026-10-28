@@ -50,7 +50,7 @@ func (w *Worker) poll(ctx context.Context) time.Duration {
 	batchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	const poolSize = 4
-	jobs := make(chan string)
+	jobs := make(chan string, poolSize)
 	type result struct {
 		order Order
 		err   error
