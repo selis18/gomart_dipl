@@ -7,7 +7,7 @@ import (
 )
 
 func (s *StorageRepo) PendingOrders(ctx context.Context) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT number FROM orders WHERE status IN ('NEW', 'PROCESSING') ORDER BY uploaded_at, number`)
+	rows, err := s.db.Query(ctx, `SELECT number FROM orders WHERE status IN ('NEW', 'PROCESSING') ORDER BY uploaded_at, number`)
 	if err != nil {
 		return nil, err
 	}
@@ -35,12 +35,12 @@ func (s *StorageRepo) UpdateAccrual(ctx context.Context, order accrual.Order) er
 	if status == "PROCESSED" {
 		amount = order.Accrual
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE orders SET status = $2, accrual = $3 WHERE number = $1 AND status IN ('NEW', 'PROCESSING')`, order.Number, status, amount)
+	_, err := s.db.Exec(ctx, `UPDATE orders SET status = $2, accrual = $3 WHERE number = $1 AND status IN ('NEW', 'PROCESSING')`, order.Number, status, amount)
 	return err
 }
 
 func (s *StorageRepo) GetOrdersByUserID(ctx context.Context, userID string) ([]model.Order, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT number, status, accrual, uploaded_at
+	rows, err := s.db.Query(ctx, `SELECT number, status, accrual, uploaded_at
  FROM orders WHERE user_id = $1 ORDER BY uploaded_at DESC, number DESC`, userID)
 	if err != nil {
 		return nil, err

@@ -28,13 +28,13 @@ func TestRequestLoggerRecordsActualResponse(t *testing.T) {
 			}
 		})).ServeHTTP(recorder, httptest.NewRequest("GET", "/api/user/balance", nil))
 		logs := entries.All()
-		if len(logs) != 2 {
+		if len(logs) != 1 {
 			t.Fatalf("logs=%v", logs)
 		}
-		if logs[0].ContextMap()["URI"] != "/api/user/balance" {
-			t.Fatal("lost request path")
+		if logs[0].ContextMap()["URI"] != "/api/user/balance" || logs[0].ContextMap()["Method"] != "GET" || logs[0].ContextMap()["Request time"] == nil {
+			t.Fatal("lost request fields")
 		}
-		response := logs[1].ContextMap()
+		response := logs[0].ContextMap()
 		if response["Status"] != int64(wantStatus) || response["Size"] != int64(wantSize) || recorder.Code != wantStatus {
 			t.Fatalf("response=%v actual status=%d", response, recorder.Code)
 		}

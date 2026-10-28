@@ -77,8 +77,6 @@ func RequestLogger(h http.Handler) http.Handler {
 			zap.String("URI", r.URL.Path),
 			zap.String("Method", r.Method),
 			zap.String("Request time", reqTime.String()),
-		)
-		Log.Info("Response",
 			zap.Int("Status", responseData.status),
 			zap.Int("Size", responseData.size),
 		)

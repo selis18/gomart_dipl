@@ -3,9 +3,11 @@ package repository
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"errors"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/selis18/gomart_dipl/internal/model"
 )
 
@@ -25,10 +27,10 @@ type Storage interface {
 }
 
 type StorageRepo struct {
-	db *sql.DB
+	db *pgxpool.Pool
 }
 
-func NewStorageRepo(db *sql.DB) *StorageRepo {
+func NewStorageRepo(db *pgxpool.Pool) *StorageRepo {
 	return &StorageRepo{
 		db: db,
 	}
@@ -49,14 +51,14 @@ func (s *StorageRepo) RegisterUser(ctx context.Context, l string, p string) (str
 	id := hex.EncodeToString(randomID[:])
 
 	var userID string
-	err := s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRow(ctx, `
 		INSERT INTO users (id, login, password)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (login) DO NOTHING
 		RETURNING id
 	`, id, l, p).Scan(&userID)
 
-	if errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrLoginExisted
 	}
 
@@ -73,13 +75,13 @@ func (s *StorageRepo) LoginUser(ctx context.Context, l string) (string, string, 
 		return "", "", ErrLoginEmpty
 	}
 
-	err := s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRow(ctx, `
 		SELECT id,password 
 		FROM users
 		WHERE login=$1
 	`, l).Scan(&userID, &passwordHash)
 
-	if errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", ErrLoginNotExisted
 	}
 	if err != nil {
@@ -94,17 +96,17 @@ var ErrOrderConflict = errors.New("order belongs to another user")
 
 func (s *StorageRepo) AddOrder(ctx context.Context, userID, number string) error {
 	var inserted string
-	err := s.db.QueryRowContext(ctx, `INSERT INTO orders (number, user_id)
+	err := s.db.QueryRow(ctx, `INSERT INTO orders (number, user_id)
 		VALUES ($1, $2) ON CONFLICT (number) DO NOTHING RETURNING number`, number, userID).Scan(&inserted)
 	if err == nil {
 		return nil
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	if !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
 	// A separate statement sees the committed winner of a concurrent insert.
 	var owner string
-	if err := s.db.QueryRowContext(ctx, `SELECT user_id FROM orders WHERE number = $1`, number).Scan(&owner); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT user_id FROM orders WHERE number = $1`, number).Scan(&owner); err != nil {
 		return err
 	}
 	if owner == userID {

@@ -1,268 +1,58 @@
 package repository
 
 import (
-	"context"
-	"database/sql"
-	"database/sql/driver"
 	"errors"
-	"io"
-	"strings"
 	"testing"
-	"time"
 
+	"github.com/selis18/gomart_dipl/internal/accrual"
 	"github.com/selis18/gomart_dipl/internal/model"
 )
 
-type balanceConn struct {
-	orderConn
-	values []driver.Value
-	err    error
-}
-
-func (c *balanceConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	if ctx.Value(orderContextKey{}) != "request" {
-		c.t.Error("missing request context")
+func TestBalanceAndWithdrawalsPostgreSQL(t *testing.T) {
+	s, ctx, alice, bob := integrationStorage(t)
+	balance, err := s.GetBalance(ctx, alice)
+	if err != nil || balance != (model.Balance{}) {
+		t.Fatalf("empty balance=%+v err=%v", balance, err)
 	}
-	if len(args) != 1 || args[0].Value != "alice" {
-		c.t.Errorf("wrong user: %v", args)
+	if err := s.AddOrder(ctx, alice, "18"); err != nil {
+		t.Fatal(err)
 	}
-	for _, clause := range []string{"earned.total - spent.total", "spent.total", "COALESCE(SUM(accrual), 0)", "status = 'PROCESSED'", "COALESCE(SUM(sum), 0)", "FROM withdrawals"} {
-		if !strings.Contains(query, clause) {
-			c.t.Errorf("missing balance clause %q", clause)
-		}
+	amount := 500.5
+	if err := s.UpdateAccrual(ctx, accrual.Order{Number: "18", Status: "PROCESSED", Accrual: &amount}); err != nil {
+		t.Fatal(err)
 	}
-	if strings.Count(query, "user_id = $1") != 2 {
-		c.t.Error("both totals must be scoped to user")
+	if err := s.Withdraw(ctx, alice, "0018", "0.10"); err != nil {
+		t.Fatal(err)
 	}
-	if c.err != nil {
-		return nil, c.err
+	if err := s.Withdraw(ctx, alice, "0018", "0.10"); err != nil {
+		t.Fatalf("repeat withdrawal: %v", err)
 	}
-	return &balanceRows{values: c.values}, nil
-}
-
-type balanceRows struct {
-	values []driver.Value
-	done   bool
-}
-
-func (*balanceRows) Columns() []string { return []string{"current", "withdrawn"} }
-func (*balanceRows) Close() error      { return nil }
-func (r *balanceRows) Next(dest []driver.Value) error {
-	if r.done {
-		return io.EOF
+	if err := s.Withdraw(ctx, alice, "0018", "0.20"); !errors.Is(err, ErrWithdrawalConflict) {
+		t.Fatalf("different amount: %v", err)
 	}
-	r.done = true
-	copy(dest, r.values)
-	return nil
-}
-func TestGetBalance(t *testing.T) {
-	dbErr := errors.New("database failure")
-	for _, tt := range []struct {
-		name    string
-		values  []driver.Value
-		err     error
-		want    model.Balance
-		wantErr bool
-	}{
-		{"decimal totals", []driver.Value{"500.5", "42"}, nil, model.Balance{Current: 500.5, Withdrawn: 42}, false},
-		{"empty totals", []driver.Value{"0", "0"}, nil, model.Balance{}, false},
-		{"all spent", []driver.Value{"0", "42.5"}, nil, model.Balance{Withdrawn: 42.5}, false},
-		{"query failure", nil, dbErr, model.Balance{}, true},
-		{"scan failure", []driver.Value{"500.5", "bad"}, nil, model.Balance{}, true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			conn := &balanceConn{orderConn: orderConn{t: t}, values: tt.values, err: tt.err}
-			db := sql.OpenDB(orderConnector{conn: conn})
-			defer db.Close()
-			got, err := NewStorageRepo(db).GetBalance(context.WithValue(context.Background(), orderContextKey{}, "request"), "alice")
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("error=%v", err)
-			}
-			if got != tt.want {
-				t.Errorf("balance=%+v, want %+v", got, tt.want)
-			}
-			if tt.err != nil && !errors.Is(err, tt.err) {
-				t.Errorf("error not propagated: %v", err)
-			}
-		})
+	if err := s.Withdraw(ctx, bob, "0018", "0.10"); !errors.Is(err, ErrWithdrawalConflict) {
+		t.Fatalf("different owner: %v", err)
 	}
-}
-
-type withdrawalConn struct {
-	orderConn
-	step                  int
-	failAt                int
-	existing              string
-	enough                bool
-	inserted              int64
-	committed, rolledBack bool
-	commitErr             error
-}
-
-func (c *withdrawalConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
-	if opts.Isolation != driver.IsolationLevel(sql.LevelReadCommitted) {
-		c.t.Error("expected read committed isolation")
+	if err := s.Withdraw(ctx, alice, "123", "500.41"); !errors.Is(err, ErrInsufficientFunds) {
+		t.Fatalf("insufficient balance: %v", err)
 	}
-	if c.failAt == -1 {
-		return nil, errors.New("begin failure")
+	balance, err = s.GetBalance(ctx, alice)
+	if err != nil || balance != (model.Balance{Current: 500.4, Withdrawn: 0.1}) {
+		t.Fatalf("balance=%+v err=%v", balance, err)
 	}
-	return c, nil
-}
-func (c *withdrawalConn) Commit() error   { c.committed = true; return c.commitErr }
-func (c *withdrawalConn) Rollback() error { c.rolledBack = true; return nil }
-func (c *withdrawalConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
-	c.step++
-	if ctx.Value(orderContextKey{}) != "request" {
-		c.t.Error("context missing")
+	balance, err = s.GetBalance(ctx, bob)
+	if err != nil || balance != (model.Balance{}) {
+		t.Fatalf("other user balance=%+v err=%v", balance, err)
 	}
-	if c.step == c.failAt {
-		return nil, errors.New("query failure")
+	withdrawals, err := s.GetWithdrawals(ctx, alice)
+	if err != nil || len(withdrawals) != 1 {
+		t.Fatalf("withdrawals=%+v err=%v", withdrawals, err)
 	}
-	switch c.step {
-	case 1:
-		if !strings.Contains(q, "FOR UPDATE") || args[0].Value != "alice" {
-			c.t.Error("user must be locked before reading balance")
-		}
-		return &orderRows{value: "alice"}, nil
-	case 2:
-		if args[0].Value != "0018" || args[1].Value != "alice" || args[2].Value != "0.10" {
-			c.t.Error("wrong duplicate lookup")
-		}
-		return &orderRows{value: c.existing}, nil
-	case 3:
-		if !strings.Contains(q, "status = 'PROCESSED'") || strings.Count(q, "user_id = $1") != 2 || !strings.Contains(q, ">= $2::numeric") {
-			c.t.Error("balance must use exact arithmetic and user scope")
-		}
-		if c.enough {
-			return &orderRows{value: "true"}, nil
-		}
-		return &orderRows{value: "false"}, nil
+	if withdrawals[0].Order != "0018" || withdrawals[0].Sum != 0.1 || withdrawals[0].ProcessedAt.IsZero() {
+		t.Fatalf("withdrawal=%+v", withdrawals[0])
 	}
-	return nil, errors.New("unexpected query")
-}
-func (c *withdrawalConn) ExecContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Result, error) {
-	c.step++
-	if c.step == c.failAt {
-		return nil, errors.New("insert failure")
-	}
-	if c.step != 4 || !strings.Contains(q, "ON CONFLICT (order_number) DO NOTHING") || args[0].Value != "0018" || args[1].Value != "alice" || args[2].Value != "0.10" {
-		c.t.Error("unexpected insert")
-	}
-	return driver.RowsAffected(c.inserted), nil
-}
-func TestWithdraw(t *testing.T) {
-	for _, tt := range []struct {
-		name, existing   string
-		enough           bool
-		inserted         int64
-		failAt           int
-		want             error
-		commit, rollback bool
-	}{
-		{"success", "", true, 1, 0, nil, true, false},
-		{"insufficient", "", false, 0, 0, ErrInsufficientFunds, false, true},
-		{"repeat", "true", false, 0, 0, nil, true, false},
-		{"different details", "false", true, 0, 0, ErrWithdrawalConflict, false, true},
-		{"concurrent order conflict", "", true, 0, 0, ErrWithdrawalConflict, false, true},
-		{"begin failure", "", true, 1, -1, nil, false, false},
-		{"lock failure", "", true, 1, 1, nil, false, true},
-		{"lookup failure", "", true, 1, 2, nil, false, true},
-		{"balance failure", "", true, 1, 3, nil, false, true},
-		{"insert failure", "", true, 1, 4, nil, false, true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			conn := &withdrawalConn{orderConn: orderConn{t: t}, existing: tt.existing, enough: tt.enough, inserted: tt.inserted, failAt: tt.failAt}
-			db := sql.OpenDB(orderConnector{conn: conn})
-			defer db.Close()
-			err := NewStorageRepo(db).Withdraw(context.WithValue(context.Background(), orderContextKey{}, "request"), "alice", "0018", "0.10")
-			if tt.failAt != 0 {
-				if err == nil {
-					t.Fatal("expected database failure")
-				}
-			} else if !errors.Is(err, tt.want) {
-				t.Errorf("error=%v want %v", err, tt.want)
-			}
-			if conn.committed != tt.commit || conn.rolledBack != tt.rollback {
-				t.Errorf("commit=%v rollback=%v", conn.committed, conn.rolledBack)
-			}
-		})
-	}
-	t.Run("commit failure", func(t *testing.T) {
-		failure := errors.New("commit failure")
-		conn := &withdrawalConn{orderConn: orderConn{t: t}, enough: true, inserted: 1, commitErr: failure}
-		db := sql.OpenDB(orderConnector{conn: conn})
-		defer db.Close()
-		err := NewStorageRepo(db).Withdraw(context.WithValue(context.Background(), orderContextKey{}, "request"), "alice", "0018", "0.10")
-		if !errors.Is(err, failure) {
-			t.Errorf("error=%v", err)
-		}
-	})
-}
-
-type withdrawalsListRows struct{ listRows }
-
-func (*withdrawalsListRows) Columns() []string {
-	return []string{"order_number", "sum", "processed_at"}
-}
-
-type withdrawalsListConn struct {
-	orderConn
-	rows *withdrawalsListRows
-	err  error
-}
-
-func (c *withdrawalsListConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
-	if ctx.Value(orderContextKey{}) != "request" {
-		c.t.Error("missing context")
-	}
-	if len(args) != 1 || args[0].Value != "alice" {
-		c.t.Errorf("wrong user filter: %v", args)
-	}
-	if !strings.Contains(q, "FROM withdrawals WHERE user_id = $1") || !strings.Contains(q, "ORDER BY processed_at DESC, order_number DESC") {
-		c.t.Error("missing user filter or deterministic newest-first ordering")
-	}
-	return c.rows, c.err
-}
-func TestGetWithdrawals(t *testing.T) {
-	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
-	values := [][]driver.Value{{"0018", "500.5", now}, {"12345678903", "42", now.Add(-time.Hour)}}
-	failure := errors.New("database failure")
-	for _, tt := range []struct {
-		name              string
-		values            [][]driver.Value
-		queryErr, rowsErr error
-		wantErr           bool
-	}{
-		{"history", values, nil, nil, false},
-		{"empty", nil, nil, nil, false},
-		{"query failure", nil, failure, nil, true},
-		{"iteration failure", values, nil, failure, true},
-		{"scan failure", [][]driver.Value{{"18", "invalid", now}}, nil, nil, true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			rows := &withdrawalsListRows{listRows: listRows{values: tt.values, err: tt.rowsErr}}
-			conn := &withdrawalsListConn{orderConn: orderConn{t: t}, rows: rows, err: tt.queryErr}
-			db := sql.OpenDB(orderConnector{conn: conn})
-			defer db.Close()
-			got, err := NewStorageRepo(db).GetWithdrawals(context.WithValue(context.Background(), orderContextKey{}, "request"), "alice")
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("error=%v", err)
-			}
-			if tt.queryErr == nil && !rows.closed {
-				t.Error("rows not closed")
-			}
-			if tt.wantErr {
-				if got != nil {
-					t.Error("must not return partial history")
-				}
-				return
-			}
-			if len(got) != len(tt.values) {
-				t.Fatalf("count=%d", len(got))
-			}
-			if len(got) > 0 && (got[0].Order != "0018" || got[0].Sum != 500.5 || !got[0].ProcessedAt.Equal(now) || got[1].Order != "12345678903" || got[1].Sum != 42 || !got[1].ProcessedAt.Equal(now.Add(-time.Hour))) {
-				t.Errorf("history=%v", got)
-			}
-		})
+	withdrawals, err = s.GetWithdrawals(ctx, bob)
+	if err != nil || len(withdrawals) != 0 {
+		t.Fatalf("other user withdrawals=%+v err=%v", withdrawals, err)
 	}
 }
