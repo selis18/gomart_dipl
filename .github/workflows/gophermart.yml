@@ -30,6 +30,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Run Go tests
+        env:
+          TEST_DATABASE_URI: "postgresql://postgres:postgres@postgres:5432/praktikum?sslmode=disable"
+        run: go test ./...
+
       - name: Download autotests binaries
         uses: robinraju/release-downloader@v1.8
         with:
@@ -51,6 +56,8 @@ jobs:
           (cd cmd/accrual && chmod +x accrual_linux_amd64)
 
       - name: Test
+        env:
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
         run: |
           gophermarttest \
             -test.v -test.run=^TestGophermart$ \
